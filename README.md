@@ -23,6 +23,7 @@ The repository contains:
 - [Lattice CPNX100-ETH-SENSOR-BRIDGE](https://www.latticesemi.com/products/designsoftwareandip/intellectualproperty/referencedesigns/referencedesigns05/lattice-nvidia-edge-ai)
   Setup: NVIDIA [hardware setup](https://docs.nvidia.com/holoscan/sensor-bridge/getting-started/hardware-setup).
 - [FRAMOS IMX900 sensor module](https://docs.framos.com/en/latest/FSMEcosystem/ProductDocumentation/FSMGO/IMX900.html) (colour or mono), on camera connector J5 or J6
+  Setup: [FRAMOS AGX Thor setup](https://docs.framos.com/en/latest/FSMEcosystem/GettingStarted/ConnectTheFSMGO/FPA_AGX_Thor.html).
 - QSFP cables for options please read [Nvidia documentation](https://docs.nvidia.com/holoscan/sensor-bridge/2-7-latest/support/notes#network-cables-and-adapters). We have tested
 	- Copper [SFP+ to SFP+ cable](https://www.amazon.com/10G-SFP-DAC-Cable-SFP-H10GB-CU2M/dp/B00U8BL09Q/ref=sr_1_4?dib=eyJ2IjoiMSJ9.Cf-3YlRVvPfOvuT9WkBirl136H7mBcMmsk3GZo6CrIgg6twUeFibkg2B33myyuT9gB0QLyjJtTm3HKhnEhweaz73ZteuRh32EQoRms2iNgX8I3HM6_CTTqjm7Pt6x1HMSCNBpbtGP2UjMWH1_LROIHSpFF3SEf53-aG4o0kkVvDVVWeTVvr-bQHiGkMqKCv9EDZCMso3MU8BX9zT_-sZOHfCBMpOPHcU_-uPGAdl47o.SFlNj6GVEC-arkVjg8PX91PbzSpRKD5cWOWvg3hEyPI&dib_tag=se&keywords=sfp%2B%2Bto%2Bsfp%2B%2Bcable&qid=1708561658&sr=8-4&th=1) with [SFP+ to QSFP adapter](https://www.amazon.com/Converter-CVR-QSFP-SFP10G-Mellanox-MAM1Q00A-QSA-All-Metal/dp/B082V1TLHH?th=1)
 	- [QSFP to 4x SFP+ 10 Gtek cable](https://www.amazon.de/-/en/10Gtek-QSFP-4SFP10G-CU1M-Direct-Breakout-Passive/dp/B0C36SJ8QN/ref=sr_1_3?crid=10FYQM0IEONAE&dib=eyJ2IjoiMSJ9.jNPbyy6wpZnT6LSHnVb-YdzfB2soiulPuHVX5UOiWQ-MY7NwlboegT7oNfKf9eOYLje1mBNfFyMA1A5F71_3yiEr3ROHro_zKN82pP5pbV3iItKcToGG6SS5trAOu6GLo5tdbB170fn6UMdse7XXIw77kypbdVG1NIBE161E0T5RRA3AINn0Va-XfB_Uu-VBFgu7PMAfXF0pFjUkN3ERwAorVik5ueyHW7KZQtB7hB4.OdwYWHWAVIJjFK54reDchvlDy76ERxEw5HSet97SHsA&dib_tag=se&keywords=40G%2BQSFP%2B%2Bto%2B4%2Bx%2B10G%2BSFP%2B%2BEthernet%2BPassive%2BDirect%2BAttach%2BCopper%2BBreakout%2BCable&qid=1772463868&sprefix=40g%2Bqsfp%2B%2Bto%2B4%2Bx%2B10g%2Bsfp%2B%2Bethernet%2Bpassive%2Bdirect%2Battach%2Bcopper%2Bbreakout%2Bcable%2Caps%2C126&sr=8-3&th=1)
@@ -102,13 +103,17 @@ Without `-N`, the ISP uses the colour tuning file, and a mono sensor's output lo
 For more info on nvsipl_camera application check -h flag and [nvsipl_camera documentation](https://docs.nvidia.com/jetson/archives/r39.2/DeveloperGuide/SD/CameraDevelopment/SIPLFramework/SIPL-for-L4T/SIPL-App-Development-Guide.html#nvsipl-camera)
 
 For GStreamer (`nvsiplsrc`) and Holoviz, see the
-[Streaming](https://github.com/framosimaging/framos-coe-sipl-drivers/wiki/Streaming) page
+[Streaming](https://github.com/framosimaging/framos-jetson-sipl-drivers/wiki/Streaming) page
 in the wiki.
+
+## Documentation
+
+- [Wiki](https://github.com/framosimaging/framos-jetson-sipl-drivers/wiki)
+- [Release notes l4t-r39.2.1](https://github.com/framosimaging/framos-jetson-sipl-drivers/wiki/Release-Notes-l4t-r39.2.1)
 
 ## Further reading
 
 - [NVIDIA SIPL framework (r39.2.1)](https://docs.nvidia.com/jetson/archives/r39.2.1/DeveloperGuide/SD/CameraDevelopment/SIPLFramework/Introduction-to-SIPL.html)
-- [Home.md](https://docs.nvidia.com/jetson/archives/r39.2.1/DeveloperGuide/SD/CameraDevelopment/SIPLFramework/Introduction-to-SIPL.html)
 
 ## License
 
