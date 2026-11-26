@@ -1,0 +1,4534 @@
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..cbb91bb
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,119 @@
++# FRAMOS IMX900 Camera-over-Ethernet driver for Jetson SIPL
++
++This repository adds the FRAMOS **IMX900** camera module driver to NVIDIA's Jetson SIPL API
++package. The IMX900 sends its image data over Ethernet (Camera-over-Ethernet, CoE). A
++Holoscan Sensor Bridge connects the sensor to the Jetson's **QSFP port**, not to the
++RJ45 Ethernet port. One build supports both the colour and the mono sensor. The driver
++detects which one is connected at runtime.
++
++| JetPack / L4T  | Framos branch | Platform |
++|----------------|---------------|----------|
++| 7.2.1 / 39.2.1 | fr-l4t-39.2.1 | AGX Thor |
++
++The repository contains:
++
++- `framos-imx900-sipl-l4t39.2.1.patch`: the driver, as a patch for NVIDIA's SIPL sources
++- `nito-files/`: ISP tuning files, `IMX900.nito` (colour) and `mono/IMX900.nito`
++- `LICENSE`, `LICENSE.NVIDIA`: license texts, see [License](#license)
++- `README.md`: this file
++
++## 1. Equipment
++
++- [NVIDIA Jetson AGX Thor Developer Kit](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-thor/)
++- [Lattice CPNX100-ETH-SENSOR-BRIDGE](https://www.latticesemi.com/products/designsoftwareandip/intellectualproperty/referencedesigns/referencedesigns05/lattice-nvidia-edge-ai)
++  Setup: NVIDIA [hardware setup](https://docs.nvidia.com/holoscan/sensor-bridge/getting-started/hardware-setup).
++- [FRAMOS IMX900 sensor module](https://docs.framos.com/en/latest/FSMEcosystem/ProductDocumentation/FSMGO/IMX900.html) (colour or mono), on camera connector J5 or J6
++- QSFP cables for options please read [Nvidia documentation](https://docs.nvidia.com/holoscan/sensor-bridge/2-7-latest/support/notes#network-cables-and-adapters). We have tested
++	- Copper [SFP+ to SFP+ cable](https://www.amazon.com/10G-SFP-DAC-Cable-SFP-H10GB-CU2M/dp/B00U8BL09Q/ref=sr_1_4?dib=eyJ2IjoiMSJ9.Cf-3YlRVvPfOvuT9WkBirl136H7mBcMmsk3GZo6CrIgg6twUeFibkg2B33myyuT9gB0QLyjJtTm3HKhnEhweaz73ZteuRh32EQoRms2iNgX8I3HM6_CTTqjm7Pt6x1HMSCNBpbtGP2UjMWH1_LROIHSpFF3SEf53-aG4o0kkVvDVVWeTVvr-bQHiGkMqKCv9EDZCMso3MU8BX9zT_-sZOHfCBMpOPHcU_-uPGAdl47o.SFlNj6GVEC-arkVjg8PX91PbzSpRKD5cWOWvg3hEyPI&dib_tag=se&keywords=sfp%2B%2Bto%2Bsfp%2B%2Bcable&qid=1708561658&sr=8-4&th=1) with [SFP+ to QSFP adapter](https://www.amazon.com/Converter-CVR-QSFP-SFP10G-Mellanox-MAM1Q00A-QSA-All-Metal/dp/B082V1TLHH?th=1)
++	- [QSFP to 4x SFP+ 10 Gtek cable](https://www.amazon.de/-/en/10Gtek-QSFP-4SFP10G-CU1M-Direct-Breakout-Passive/dp/B0C36SJ8QN/ref=sr_1_3?crid=10FYQM0IEONAE&dib=eyJ2IjoiMSJ9.jNPbyy6wpZnT6LSHnVb-YdzfB2soiulPuHVX5UOiWQ-MY7NwlboegT7oNfKf9eOYLje1mBNfFyMA1A5F71_3yiEr3ROHro_zKN82pP5pbV3iItKcToGG6SS5trAOu6GLo5tdbB170fn6UMdse7XXIw77kypbdVG1NIBE161E0T5RRA3AINn0Va-XfB_Uu-VBFgu7PMAfXF0pFjUkN3ERwAorVik5ueyHW7KZQtB7hB4.OdwYWHWAVIJjFK54reDchvlDy76ERxEw5HSet97SHsA&dib_tag=se&keywords=40G%2BQSFP%2B%2Bto%2B4%2Bx%2B10G%2BSFP%2B%2BEthernet%2BPassive%2BDirect%2BAttach%2BCopper%2BBreakout%2BCable&qid=1772463868&sprefix=40g%2Bqsfp%2B%2Bto%2B4%2Bx%2B10g%2Bsfp%2B%2Bethernet%2Bpassive%2Bdirect%2Battach%2Bcopper%2Bbreakout%2Bcable%2Caps%2C126&sr=8-3&th=1)
++
++
++
++## 2. Installation
++
++1. Flash JetPack 7.2.1 on the AGX Thor. The simplest route is the ISO installer on a USB
++   stick, no host PC needed, as described in the
++   [AGX Thor Developer Kit Quick Start Guide](https://docs.nvidia.com/jetson/agx-thor-devkit/user-guide/latest/quick_start.html).
++   The [JetPack download page](https://developer.nvidia.com/embedded/jetpack/downloads/)
++   has the ISO and the alternatives: [SDK Manager](https://developer.nvidia.com/sdk-manager) or
++   [manual flashing](https://docs.nvidia.com/jetson/archives/r39.2.1/DeveloperGuide/SD/FlashingSupport.html)
++   from an Ubuntu host.
++
++2. To configure network port follow the instructions from Nvidia for
++   [Holoscan Sensor Bridge host setup](https://docs.nvidia.com/holoscan/sensor-bridge/getting-started/host-setup).
++   The configs expect the bridge at `192.168.0.2`, which means a cable in SFP+ port 0 of
++   the bridge, connected to the Thor's QSFP port (interface `mgbe0_0`):
++
++3. If you need to update firmware version of the Lattice board you will need to [build the Holoscan Sensor Bridge container](https://docs.nvidia.com/holoscan/sensor-bridge/getting-started/build) and [flash the board](https://docs.nvidia.com/holoscan/sensor-bridge/firmware/firmware-setup)
++
++4. Install [SIPL and dependencies](https://docs.nvidia.com/jetson/archives/r39.2.1/DeveloperGuide/SD/CameraDevelopment/SIPLFramework/SIPL-for-L4T/SIPL-App-Development-Guide.html#build-prerequisites)
++Install the build dependencies. For other ways to install the CUDA headers, see
++   [sipl/README.md](sipl/README.md). Run one test build to confirm everything works as expected.
++
++
++5. Clone this repository (branch `fr-l4t-39.2.1`) to your home folder on the Jetson,
++   apply the FRAMOS patch to the installed SIPL sources, then build and install:
++
++   ```bash
++   sudo apt-get install -y git
++   cd ~
++   git clone -b fr-l4t-39.2.1 https://github.com/framosimaging/framos-jetson-sipl-drivers.git
++   cd /usr/src/jetson_sipl_api
++   sudo git apply --check ~/framos-jetson-sipl-drivers/framos-imx900-sipl-l4t39.2.1.patch
++   sudo git apply ~/framos-jetson-sipl-drivers/framos-imx900-sipl-l4t39.2.1.patch
++   cd sipl
++   sudo bash build.sh
++   ```
++
++   `git apply --check` changes nothing; it only confirms that the patch matches the
++   installed SIPL version. The build installs the drivers to `/usr/lib/nvsipl_drv/` and
++   `nvsipl_camera` / `nvsipl_query` to `/usr/sbin/`.
++
++6. Install the ISP tuning files from `nito-files/`. The mono tuning has its own folder
++   because it must also be named `IMX900.nito`:
++
++   ```bash
++   cd ~/framos-jetson-sipl-drivers
++   sudo cp nito-files/IMX900.nito /var/nvidia/nvcam/settings/sipl/
++   sudo mkdir -p /var/nvidia/nvcam/settings/sipl/mono
++   sudo cp nito-files/mono/IMX900.nito /var/nvidia/nvcam/settings/sipl/mono/
++   ```
++
++## 3. Streaming
++
++To list the available configs, run `sudo nvsipl_query -l`.
++
++| Config               | Resolution | FPS   | Setup                           |
++|----------------------|------------|-------|---------------------------------|
++| `IMX900`             | 2048x1552  | 72.1  | one camera on J5, colour or mono |
++| `IMX900_BIN2X2_MONO` | 1024x720   | 160.1 | one camera on J5, mono only     |
++
++
++### nvsipl_camera
++
++```bash
++sudo nvsipl_camera -c IMX900 -H -R -s -r 15                  # stream 15 s, print FPS every 2 s
++sudo nvsipl_camera -c IMX900 -H -s -r 15 --egl-display       # on-screen preview
++sudo nvsipl_camera -c IMX900 -H -s -r 15 \
++     -N /var/nvidia/nvcam/settings/sipl/mono/                # mono sensor via ISP
++```
++
++Without `-N`, the ISP uses the colour tuning file, and a mono sensor's output looks magenta.
++For more info on nvsipl_camera application check -h flag and [nvsipl_camera documentation](https://docs.nvidia.com/jetson/archives/r39.2/DeveloperGuide/SD/CameraDevelopment/SIPLFramework/SIPL-for-L4T/SIPL-App-Development-Guide.html#nvsipl-camera)
++
++For GStreamer (`nvsiplsrc`) and Holoviz, see the
++[Streaming](https://github.com/framosimaging/framos-coe-sipl-drivers/wiki/Streaming) page
++in the wiki.
++
++## Further reading
++
++- [NVIDIA SIPL framework (r39.2.1)](https://docs.nvidia.com/jetson/archives/r39.2.1/DeveloperGuide/SD/CameraDevelopment/SIPLFramework/Introduction-to-SIPL.html)
++- [Home.md](https://docs.nvidia.com/jetson/archives/r39.2.1/DeveloperGuide/SD/CameraDevelopment/SIPLFramework/Introduction-to-SIPL.html)
++
++## License
++
++- FRAMOS files whose header carries `SPDX-License-Identifier: Apache-2.0` are licensed
++  under the Apache License 2.0 - see `LICENSE` in this repository.
++- NVIDIA files, including the ones FRAMOS modified, remain under NVIDIA's Jetson Linux
++  license (NVIDIA Driver License Agreement) - see `LICENSE.NVIDIA` in this repository.
++  The NVIDIA SIPL package itself is not included; install it from NVIDIA first.
+diff --git a/sipl/CMakeLists.txt b/sipl/CMakeLists.txt
+index aa64eac..1b31fe6 100755
+--- a/sipl/CMakeLists.txt
++++ b/sipl/CMakeLists.txt
+@@ -1,4 +1,5 @@
+ # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++# SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
+ # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ #
+ # NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+@@ -7,6 +8,8 @@
+ # disclosure or distribution of this material and related documentation
+ # without an express license agreement from NVIDIA CORPORATION or
+ # its affiliates is strictly prohibited.
++#
++# Modified by FRAMOS GmbH, 2026: build and install the IMX900 camera module library.
+ 
+ cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
+ 
+@@ -115,6 +118,7 @@ add_subdirectory(uddf/drivers/serializers/MAX9295)
+ add_subdirectory(uddf/drivers/sensors/IMX728)
+ add_subdirectory(uddf/drivers/sensors/IMX623)
+ add_subdirectory(uddf/drivers/sensors/AR0234)
++add_subdirectory(uddf/drivers/sensors/IMX900)
+ 
+ # --- EEPROM drivers ---
+ add_subdirectory(uddf/drivers/eeproms/GT24C64D)
+@@ -277,6 +281,7 @@ add_subdirectory(uddf/libraries)
+ if(HOLOLINK_AVAILABLE)
+     set_target_properties(eagle_library                PROPERTIES OUTPUT_NAME nvuddf_eagle_library)
+ endif()
++set_target_properties(imx900_library                   PROPERTIES OUTPUT_NAME nvuddf_imx900_library)
+ set_target_properties(uddf_max96712_library            PROPERTIES OUTPUT_NAME nvuddf_max96712_library)
+ set_target_properties(uddf_max96724_library            PROPERTIES OUTPUT_NAME nvuddf_max96724_library)
+ set_target_properties(uddf_ar0234hawkcameramodule_library  PROPERTIES OUTPUT_NAME nvuddf_ar0234hawkcameramodule_library)
+@@ -292,6 +297,7 @@ set(_all_driver_targets
+     uddf_r0sim623cameramodule_library uddf_r0sim728cameramodule_library
+     max20087_library
+     uddf_tegra_deser_power_library
++    imx900_library
+     # Sample drivers (always built)
+     sample_coe_driver
+     eagle_driver
+@@ -319,6 +325,7 @@ set(_install_library_targets
+     uddf_r0sim728cameramodule_library
+     max20087_library
+     uddf_tegra_deser_power_library
++    imx900_library
+ )
+ if(HOLOLINK_AVAILABLE)
+     list(APPEND _install_library_targets eagle_library)
+diff --git a/sipl/build.sh b/sipl/build.sh
+new file mode 100644
+index 0000000..1b47998
+--- /dev/null
++++ b/sipl/build.sh
+@@ -0,0 +1,7 @@
++rm -rf build
++mkdir build
++cd build
++cmake ../
++make -j$(nproc)
++make install
++cd ..
+diff --git a/sipl/sipl-configs/config-examples/imx900_cam1.json b/sipl/sipl-configs/config-examples/imx900_cam1.json
+new file mode 100644
+index 0000000..713c55f
+--- /dev/null
++++ b/sipl/sipl-configs/config-examples/imx900_cam1.json
+@@ -0,0 +1,92 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// IMX900 on P-Con J6
++//
++// Stream with:  sudo nvsipl_camera -c IMX900_CAM1 -H -R -s -r 15
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900_CAM1",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J6",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_CAM1",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 1,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:c2:58:c0:ef",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 5,
++                "description": "IMX900 sensor via CoE on P-Con J6",
++                "i2cAddress": "0x1a",
++                "deviceIndex": 1,
++                "sensorGroup": 0,
++                "virtualChannels": [
++                    {
++                        "cfa": "rggb",
++                        "embeddedTopLines": 41,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 2048,
++                        "height": 1552,
++                        "fps": 72.1,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900_CAM1",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900_CAM1",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "sync_sensors": false,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/sipl-configs/config-examples/imx900_dual.json b/sipl/sipl-configs/config-examples/imx900_dual.json
+new file mode 100644
+index 0000000..24e031a
+--- /dev/null
++++ b/sipl/sipl-configs/config-examples/imx900_dual.json
+@@ -0,0 +1,147 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// Two IMX900 on P-Con J5 and J6, free-running, one SFP+
++//
++// Stream with:  sudo nvsipl_camera -c IMX900_DUAL -H -R -s -r 15
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900_DUAL",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J5 (dual)",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_DUAL",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 0,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:c2:58:c0:ef",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 6,
++                "description": "IMX900 sensor via CoE on P-Con J5",
++                "i2cAddress": "0x1a",
++                "deviceIndex": 0,
++                "sensorGroup": 0,
++                "virtualChannels": [
++                    {
++                        "cfa": "rggb",
++                        "embeddedTopLines": 41,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 2048,
++                        "height": 1552,
++                        "fps": 72.1,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        },
++        {
++            "name": "IMX900_DUAL",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J6 (dual)",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_DUAL",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 1,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:c2:58:c0:ef",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 7,
++                "description": "IMX900 sensor via CoE on P-Con J6",
++                "i2cAddress": "0x1a",
++                "deviceIndex": 1,
++                "sensorGroup": 0,
++                "virtualChannels": [
++                    {
++                        "cfa": "rggb",
++                        "embeddedTopLines": 41,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 2048,
++                        "height": 1552,
++                        "fps": 72.1,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900_DUAL",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900_DUAL (J5 + J6 on one SFP+)",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "sync_sensors": false,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/sipl-configs/config-examples/imx900_dual_sync.json b/sipl/sipl-configs/config-examples/imx900_dual_sync.json
+new file mode 100644
+index 0000000..6e46565
+--- /dev/null
++++ b/sipl/sipl-configs/config-examples/imx900_dual_sync.json
+@@ -0,0 +1,148 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// Two IMX900 on P-Con J5 and J6, one SFP+, frame-locked: J6 (sensorGroup 1)
++// follows J5's XVS/XHS. No -m mask: with one sensor in the group it is refused.
++//
++// Stream with:  sudo nvsipl_camera -c IMX900_DUAL_SYNC -H -R -s -r 15
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900_DUAL_SYNC",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J5 (dual, sync controller)",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_DUAL_SYNC",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 0,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:c2:58:c0:ef",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 8,
++                "description": "IMX900 sensor via CoE on P-Con J5",
++                "i2cAddress": "0x1a",
++                "deviceIndex": 0,
++                "sensorGroup": 0,
++                "virtualChannels": [
++                    {
++                        "cfa": "rggb",
++                        "embeddedTopLines": 41,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 2048,
++                        "height": 1552,
++                        "fps": 72.1,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        },
++        {
++            "name": "IMX900_DUAL_SYNC",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J6 (dual, sync target)",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_DUAL_SYNC",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 1,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:c2:58:c0:ef",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 9,
++                "description": "IMX900 sensor via CoE on P-Con J6",
++                "i2cAddress": "0x1a",
++                "deviceIndex": 1,
++                "sensorGroup": 1,
++                "virtualChannels": [
++                    {
++                        "cfa": "rggb",
++                        "embeddedTopLines": 41,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 2048,
++                        "height": 1552,
++                        "fps": 72.1,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900_DUAL_SYNC",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900_DUAL_SYNC (J5 controller, J6 target on one SFP+)",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "sync_sensors": false,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/sipl-configs/config-examples/imx900_j5_seq.json b/sipl/sipl-configs/config-examples/imx900_j5_seq.json
+new file mode 100644
+index 0000000..75a8363
+--- /dev/null
++++ b/sipl/sipl-configs/config-examples/imx900_j5_seq.json
+@@ -0,0 +1,93 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// IMX900 on P-Con J5 as sync target (sensorGroup 1): line timing from an external
++// XHS (121.72 kHz for the all-pixel mode), frames from an external trigger.
++//
++// Stream with:  sudo IMX900_TRIGGER_MODE=1 nvsipl_camera -c IMX900_J5_SEQ -H -R -0 -1 -2 -s -r 10
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900_J5_SEQ",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J5, sync target (external XVS/XHS or sequential trigger)",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_J5_SEQ",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 0,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:c2:58:c0:ef",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 10,
++                "description": "IMX900 sensor via CoE on P-Con J5",
++                "i2cAddress": "0x1a",
++                "deviceIndex": 0,
++                "sensorGroup": 1,
++                "virtualChannels": [
++                    {
++                        "cfa": "rggb",
++                        "embeddedTopLines": 41,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 2048,
++                        "height": 1552,
++                        "fps": 72.1,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900_J5_SEQ",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900_J5_SEQ",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "sync_sensors": false,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/sipl-configs/imx900.json b/sipl/sipl-configs/imx900.json
+new file mode 100755
+index 0000000..050caeb
+--- /dev/null
++++ b/sipl/sipl-configs/imx900.json
+@@ -0,0 +1,89 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// IMX900 - 2048x1552 @ 72.1 fps, raw12tp, dphyRate 891, pixel clock 297000 kHz
++//
++// Stream with:  sudo nvsipl_camera -c IMX900 -H -R -s -r 15
++// Colour vs mono is detected at runtime from sensor register 0x3817, so this config serves both sensor variants.
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900",
++            "description": "IMX900 - 2064x1552 72FPS Mode",
++            "platform": "IMX900",
++            "platformConfig": "IMX900",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 0,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:C2:58:C1:D7",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 0,
++                "description": "IMX900 sensor via CoE",
++                "i2cAddress": "0x1a",
++                "virtualChannels": [
++                    {
++                        "cfa": "rggb",
++                        "embeddedTopLines": 41,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 2048,
++                        "height": 1552,
++                        "fps": 72.1,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/sipl-configs/imx900_1080p.json b/sipl/sipl-configs/imx900_1080p.json
+new file mode 100644
+index 0000000..2c10361
+--- /dev/null
++++ b/sipl/sipl-configs/imx900_1080p.json
+@@ -0,0 +1,91 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// IMX900 - 1920x1080 @ 100.0 fps, raw12tp, dphyRate 891, pixel clock 297000 kHz
++//
++// This mode will be available in a future release.
++//
++// Stream with:  sudo nvsipl_camera -c IMX900_1080P -H -R -s -r 15
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900_1080P",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 1920x1080 ROI 100FPS Mode",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_1080P",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 0,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:C2:58:C1:D7",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 1,
++                "description": "IMX900 sensor via CoE",
++                "i2cAddress": "0x1a",
++                "virtualChannels": [
++                    {
++                        "cfa": "rggb",
++                        "embeddedTopLines": 41,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 1920,
++                        "height": 1080,
++                        "fps": 100.0,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900_1080P",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900_1080P",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/sipl-configs/imx900_bin2x2_mono.json b/sipl/sipl-configs/imx900_bin2x2_mono.json
+new file mode 100644
+index 0000000..e9cec91
+--- /dev/null
++++ b/sipl/sipl-configs/imx900_bin2x2_mono.json
+@@ -0,0 +1,89 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// IMX900 - 1024x720 @ 160.1 fps mono 2x2 average, raw12tp, dphyRate 891, pixel clock 297000 kHz
++//
++// Stream with:  sudo nvsipl_camera -c IMX900_BIN2X2_MONO -H -R -s -r 15
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900_BIN2X2_MONO",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 1024x720 12-bit 2x2 Average Mono 160FPS Mode",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_BIN2X2_MONO",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 0,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:C2:58:C1:D7",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 4,
++                "description": "IMX900 sensor via CoE",
++                "i2cAddress": "0x1a",
++                "virtualChannels": [
++                    {
++                        "cfa": "gbrg",
++                        "embeddedTopLines": 21,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 1024,
++                        "height": 720,
++                        "fps": 160.1,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900_BIN2X2_MONO",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900_BIN2X2_MONO",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/sipl-configs/imx900_sub2.json b/sipl/sipl-configs/imx900_sub2.json
+new file mode 100644
+index 0000000..79dbff9
+--- /dev/null
++++ b/sipl/sipl-configs/imx900_sub2.json
+@@ -0,0 +1,91 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// IMX900 - 1032x776 @ 136.6 fps, raw12tp, dphyRate 891, pixel clock 297000 kHz
++//
++// This mode will be available in a future release.
++//
++// Stream with:  sudo nvsipl_camera -c IMX900_SUB2 -H -R -s -r 15
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900_SUB2",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 1032x776 12-bit 1/2 Subsampling Colour 136FPS Mode",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_SUB2",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 0,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:C2:58:C1:D7",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 2,
++                "description": "IMX900 sensor via CoE",
++                "i2cAddress": "0x1a",
++                "virtualChannels": [
++                    {
++                        "cfa": "gbrg",
++                        "embeddedTopLines": 21,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 1032,
++                        "height": 776,
++                        "fps": 136.6,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900_SUB2",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900_SUB2",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/sipl-configs/imx900_sub2_mono.json b/sipl/sipl-configs/imx900_sub2_mono.json
+new file mode 100644
+index 0000000..920c364
+--- /dev/null
++++ b/sipl/sipl-configs/imx900_sub2_mono.json
+@@ -0,0 +1,91 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++//
++// IMX900 - 1032x776 @ 160.0 fps mono, raw12tp, dphyRate 891, pixel clock 297000 kHz
++//
++// This mode will be available in a future release.
++//
++// Stream with:  sudo nvsipl_camera -c IMX900_SUB2_MONO -H -R -s -r 15
++//
++// Generated from IMX900QueryPlugin.cpp - edit that, not this file.
++{
++    "cameraConfigs": [
++        {
++            "name": "IMX900_SUB2_MONO",
++            "moduleDriverName": "IMX900",
++            "description": "IMX900 - 1032x776 12-bit 1/2 Subsampling Mono 160FPS Mode",
++            "platform": "IMX900",
++            "platformConfig": "IMX900_SUB2_MONO",
++            "mipiSettings": {
++                "lanes": 4,
++                "lpBypassMode": false,
++                "tClkSettle": 0,
++                "mipiClockRate": 297000,
++                "tHsSettle": 0,
++                "lanePolarity": [
++                    0,
++                    0,
++                    0,
++                    0
++                ],
++                "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                "dphyRate": 891,
++                "cphyRate": 891,
++                "phyMode": "dphy"
++            },
++            "CoECamera": {
++                "isStereo": false,
++                "hsbSensorIndex": 0,
++                "hsb_id": 0,
++                "sensor": {
++                    "mac_address": "00:50:C2:58:C1:D7",
++                    "ip_address": "192.168.0.2"
++                }
++            },
++            "sensorInfo": {
++                "name": "IMX900",
++                "id": 3,
++                "description": "IMX900 sensor via CoE",
++                "i2cAddress": "0x1a",
++                "virtualChannels": [
++                    {
++                        "cfa": "gbrg",
++                        "embeddedTopLines": 21,
++                        "embeddedBottomLines": 0,
++                        "inputFormat": "raw12tp",
++                        "width": 1032,
++                        "height": 776,
++                        "fps": 160.0,
++                        "isEmbeddedDataTypeEnabled": true
++                    }
++                ]
++            },
++            "isEEPROMSupported": false,
++            "type": "CoE"
++        }
++    ],
++    "transportSettings": [
++        {
++            "name": "IMX900_SUB2_MONO",
++            "compatible_name": "HsbTransport900",
++            "description": "Transport settings for IMX900_SUB2_MONO",
++            "if_name": "mgbe0_0",
++            "ip_address": "192.168.0.2",
++            "vlan_enable": false,
++            "hsb_id": 0,
++            "type": "CoE"
++        }
++    ]
++}
+diff --git a/sipl/uddf/drivers/hsb/HsbTransportDriver.cpp b/sipl/uddf/drivers/hsb/HsbTransportDriver.cpp
+index e2a001b..b2baaa7 100755
+--- a/sipl/uddf/drivers/hsb/HsbTransportDriver.cpp
++++ b/sipl/uddf/drivers/hsb/HsbTransportDriver.cpp
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++ * SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
+  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+  *
+  * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+@@ -8,6 +9,9 @@
+  * disclosure or distribution of this material and related documentation
+  * without an express license agreement from NVIDIA CORPORATION or
+  * its affiliates is strictly prohibited.
++ *
++ * Modified by FRAMOS GmbH, 2026: camera I2C bus taken from the bridge metadata,
++ * camera-bus I2C mux (0x70) shared by both ports, register-offset width per device.
+  */
+ 
+ #include "HsbTransportDriver.hpp"
+@@ -242,9 +246,21 @@ bool HsbTransportDriver::Init(const CoEBridgeContext& context)
+     }
+     m_dataChan.resize(numSensors);
+     m_i2c.resize(numSensors);
++    std::vector<uint32_t> i2cBus(numSensors, hololink::CAM_I2C_BUS);
++    {
++        // Re-select on first access: another process may have moved the mux.
++        std::lock_guard<std::mutex> guard(m_i2cLock);
++        m_muxChannel = 0U;
++    }
+     for (size_t i = 0U; i < numSensors; i++) {
+         hololink::Metadata sensorMeta(*m_baseMetadata);
+         hololink::DataChannel::use_sensor(sensorMeta, i);
++        // hololink-lite shares one camera bus across both ports (behind the
++        // 0x70 mux); boards with a bus per port publish it as i2c_bus.
++        const auto bus = sensorMeta.get<int64_t>("i2c_bus");
++        if (bus) {
++            i2cBus[i] = static_cast<uint32_t>(*bus);
++        }
+         m_dataChan[i] = std::make_unique<hololink::DataChannel>(sensorMeta);
+         if (m_hololink != m_dataChan[i]->hololink()) {
+             log("Error: sensor ", i, " belongs to a different hololink device");
+@@ -259,11 +275,15 @@ bool HsbTransportDriver::Init(const CoEBridgeContext& context)
+ 
+         sensorMap &= ~(1U << i);
+ 
+-        m_i2c[i] = m_hololink->get_i2c(hololink::CAM_I2C_BUS + i);
++        m_i2c[i] = m_hololink->get_i2c(i2cBus[i]);
+         if (!m_i2c[i]) {
+             log("Error: Failed to get I2C interface for sensor ", i);
+             return false;
+         }
++        if (i < m_muxChannels.size()) {
++            log("Sensor ", i, ": I2C bus ", i2cBus[i], ", camera mux channel 0x", std::hex,
++                static_cast<uint32_t>(m_muxChannels[i]), std::dec);
++        }
+ 
+         switch (context.initConfig.pixelFormat) {
+         case uddf::ddi::PIX_PACK_RAW10:
+@@ -578,6 +598,41 @@ uint32_t HsbTransportDriver::GetMetadataPacketBytes(const CoEBridgeContext& cont
+     return 128U;
+ }
+ 
++bool HsbTransportDriver::selectCameraMux(hololink::Hololink::I2c* const i2cIf,
++                                        const uint32_t sensorID)
++{
++    if (m_muxChannels.empty()) {
++        return true; // no camera-bus mux on this board
++    }
++    if (sensorID >= m_muxChannels.size()) {
++        log("Error: no camera mux channel for sensor ", sensorID);
++        return false;
++    }
++
++    // Caller holds m_i2cLock.
++    const uint8_t channel = m_muxChannels[sensorID];
++    if (channel == m_muxChannel) {
++        return true;
++    }
++
++    try {
++        // Exactly one bit: two open channels tie both modules onto the bus.
++        i2cIf->i2c_transaction(CAM_I2C_MUX_ADDRESS, { channel }, 0U);
++    } catch (const std::exception& e) {
++        log("Error selecting camera mux channel 0x", std::hex,
++            static_cast<uint32_t>(channel), std::dec, " for sensor ", sensorID,
++            ": ", e.what());
++        m_muxChannel = 0U;
++        return false;
++    }
++
++    // With two sensors the mux flips on nearly every transaction; debug only.
++    log_ext("Camera I2C mux -> channel 0x", std::hex, static_cast<uint32_t>(channel),
++            std::dec, " (sensor ", sensorID, ")");
++    m_muxChannel = channel;
++    return true;
++}
++
+ IReadWriteI2C::I2CResult
+ HsbTransportDriver::ReadI2C(uddf::cdi::IDriverServices& driverServices,
+     uint8_t sensorIndex, uint16_t address, uint16_t offset, uint8_t* data, uint16_t length)
+@@ -605,10 +660,17 @@ HsbTransportDriver::ReadI2C(uddf::cdi::IDriverServices& driverServices,
+         return RWI2C_SUCCESS;
+     }
+ 
+-    // Prepare write bytes with the register offset (16-bit, big-endian)
++    // Both ports answer at the same addresses; keep the mux select and the
++    // transaction it is for together.
++    std::lock_guard<std::mutex> guard(m_i2cLock);
++    if ((address != CAM_I2C_MUX_ADDRESS) && !selectCameraMux(i2cIf, sensorID)) {
++        return RWI2C_INTERNAL_ERROR;
++    }
++
++    // Prepare write bytes with the register offset, framed at this device's
++    // declared offset width (see m_deviceOffsetWidth).
+     std::vector<uint8_t> write_bytes;
+-    write_bytes.push_back((offset >> 8) & 0xFF);  // High byte first
+-    write_bytes.push_back(offset & 0xFF);         // Low byte
++    AppendOffsetBytes(write_bytes, address, offset);
+ 
+     result = executeI2cTransaction(i2cIf, address, write_bytes, length, data);
+ 
+@@ -635,10 +697,19 @@ IReadWriteI2C::I2CResult HsbTransportDriver::WriteI2C(uddf::cdi::IDriverServices
+         return RWI2C_INTERNAL_ERROR;
+     }
+ 
+-    // Prepare write bytes with the register offset (16-bit, big-endian) and data
++    // See ReadI2C: mux select and transaction stay together.
++    std::lock_guard<std::mutex> guard(m_i2cLock);
++    if (address == CAM_I2C_MUX_ADDRESS) {
++        // A driver writing the mux itself; keep the cache honest.
++        m_muxChannel = ((data != nullptr) && (length > 0U)) ? data[0] : 0U;
++    } else if (!selectCameraMux(i2cIf, sensorID)) {
++        return RWI2C_INTERNAL_ERROR;
++    }
++
++    // Prepare write bytes with the register offset, framed at this device's
++    // declared offset width (see m_deviceOffsetWidth), followed by the data.
+     std::vector<uint8_t> write_bytes;
+-    write_bytes.push_back((offset >> 8) & 0xFF);  // High byte first
+-    write_bytes.push_back(offset & 0xFF);         // Low byte
++    AppendOffsetBytes(write_bytes, address, offset);
+     if (data != nullptr && length > 0) {
+         write_bytes.insert(write_bytes.end(), data, data + length);
+     }
+@@ -648,13 +719,47 @@ IReadWriteI2C::I2CResult HsbTransportDriver::WriteI2C(uddf::cdi::IDriverServices
+     return result;
+ }
+ 
++void HsbTransportDriver::SetCameraMuxChannels(std::vector<uint8_t> channels)
++{
++    std::lock_guard<std::mutex> guard(m_i2cLock);
++    m_muxChannels = std::move(channels);
++    m_muxChannel = 0U;
++}
++
+ bool HsbTransportDriver::SetDeviceOffsetWidth(uint16_t address, uint8_t offsetWidth) noexcept
+ {
+     log("SetDeviceOffsetWidth called: address = 0x", std::hex, address, ", offsetWidth = ",
+-        static_cast<int>(offsetWidth));
++        std::dec, static_cast<int>(offsetWidth));
++
++    // Per IReadWriteI2C the width must be 1 or 2. Reject anything else rather
++    // than storing a value that would misframe every access to this device.
++    if ((offsetWidth != 1U) && (offsetWidth != 2U)) {
++        log("Error: SetDeviceOffsetWidth - offsetWidth ", std::dec,
++            static_cast<int>(offsetWidth), " must be 1 or 2");
++        return false;
++    }
++
++    m_deviceOffsetWidth[address] = offsetWidth;
+     return true;
+ }
+ 
++uint8_t HsbTransportDriver::GetDeviceOffsetWidth(uint16_t address) const noexcept
++{
++    const auto it = m_deviceOffsetWidth.find(address);
++    return (it != m_deviceOffsetWidth.end()) ? it->second : DEFAULT_OFFSET_WIDTH;
++}
++
++void HsbTransportDriver::AppendOffsetBytes(std::vector<uint8_t>& writeBytes, uint16_t address,
++                                           uint16_t offset) const
++{
++    if (GetDeviceOffsetWidth(address) == 1U) {
++        writeBytes.push_back(offset & 0xFF);            // 8-bit register pointer
++    } else {
++        writeBytes.push_back((offset >> 8) & 0xFF);     // High byte first
++        writeBytes.push_back(offset & 0xFF);            // Low byte
++    }
++}
++
+ bool HsbTransportDriver::processEnumeratedDevice(hololink::Metadata& metadata)
+ {
+     // Convert metadata to hsb_info structure
+diff --git a/sipl/uddf/drivers/hsb/HsbTransportDriver.hpp b/sipl/uddf/drivers/hsb/HsbTransportDriver.hpp
+index cd51b5d..58093eb 100755
+--- a/sipl/uddf/drivers/hsb/HsbTransportDriver.hpp
++++ b/sipl/uddf/drivers/hsb/HsbTransportDriver.hpp
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++ * SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
+  * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+  *
+  * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+@@ -8,6 +9,9 @@
+  * disclosure or distribution of this material and related documentation
+  * without an express license agreement from NVIDIA CORPORATION or
+  * its affiliates is strictly prohibited.
++ *
++ * Modified by FRAMOS GmbH, 2026: camera-bus I2C mux (0x70) shared by both ports,
++ * register-offset width per device.
+  */
+ 
+ #ifndef UDDF_SAMPLES_HSBTRANSPORTDRIVER_HPP
+@@ -16,6 +20,7 @@
+ #include "HsbTransportDriverBase.hpp"
+ #include "uddf/ddi/interfaces/IReadWriteI2C.hpp"
+ #include "uddf/ddi/interfaces/ICoEBridgeControl.hpp"
++#include <mutex>
+ #include <string>
+ #include <string_view>
+ 
+@@ -116,6 +121,13 @@ public:
+     I2CResult WriteI2C(uddf::cdi::IDriverServices& driverServices, uint8_t sensorIndex, uint16_t address, uint16_t offset, uint8_t const* data, uint16_t length) override;
+     bool SetDeviceOffsetWidth(uint16_t address, uint8_t offsetWidth) noexcept override;
+ 
++    /**
++     * @brief Enable the camera-bus mux (0x70) for boards whose camera ports
++     *        share one I2C bus: @p channels[i] is selected before every
++     *        transaction for sensor i. Without it no mux is touched.
++     */
++    void SetCameraMuxChannels(std::vector<uint8_t> channels);
++
+     // --- HsbExtendedInterface Methods ---
+ 
+     std::vector<hsb_info> EnumerateDevices(uint32_t timeout_seconds, const char *target_interface) override;
+@@ -139,6 +151,28 @@ private:
+     uint32_t m_hsbId;
+     std::vector<hsb_info> m_discovered_devices_transport;
+ 
++    /**
++     * Register-offset width, in bytes, per I2C device address, as delivered by
++     * SetDeviceOffsetWidth(). Addresses that were never declared fall back to
++     * DEFAULT_OFFSET_WIDTH.
++     *
++     * The width has to be honoured per device: most parts on this bridge use a
++     * 16-bit register offset, but 8-bit-addressed ones (a PCA95xx-style IO
++     * expander, a PCA9548-style mux) latch the first byte after the address as
++     * their command/register pointer, so framing a 2-byte offset for those
++     * selects the wrong register.
++     */
++    static constexpr uint8_t DEFAULT_OFFSET_WIDTH {2U};
++
++    std::unordered_map<uint16_t, uint8_t> m_deviceOffsetWidth;
++
++    /** @brief Offset width for @p address, or DEFAULT_OFFSET_WIDTH if undeclared. */
++    uint8_t GetDeviceOffsetWidth(uint16_t address) const noexcept;
++
++    /** @brief Append @p offset to @p writeBytes using this device's offset width. */
++    void AppendOffsetBytes(std::vector<uint8_t>& writeBytes, uint16_t address,
++                           uint16_t offset) const;
++
+     // Helper function to process enumerated device metadata
+     bool processEnumeratedDevice(hololink::Metadata& metadata);
+ 
+@@ -148,6 +182,22 @@ private:
+     // VSYNC setup for stereo synchronization
+     bool setupVsync(uint32_t freq) const;
+ 
++    /**
++     * Camera-bus I2C mux (PCA9546-style). The modules behind it answer at the
++     * same addresses, so a sensor's channel is selected before each of its
++     * transactions. Indexed by sensor (deviceIndex); empty = no mux.
++     */
++    static constexpr uint16_t CAM_I2C_MUX_ADDRESS {0x70U};
++    std::vector<uint8_t> m_muxChannels;
++
++    /** Serialises each mux select with its transaction; SIPL may drive the sensors from different threads. */
++    std::mutex m_i2cLock;
++    /** Channel last written to the mux; 0 = not selected yet. */
++    uint8_t m_muxChannel {0U};
++
++    /** @brief Point the mux at @p sensorID's port, unless already there. Caller holds m_i2cLock. */
++    bool selectCameraMux(hololink::Hololink::I2c* i2cIf, uint32_t sensorID);
++
+     // Private helper for I2C transactions
+     IReadWriteI2C::I2CResult executeI2cTransaction(
+         hololink::Hololink::I2c* const i2cIf,
+diff --git a/sipl/uddf/drivers/sensors/IMX900/CMakeLists.txt b/sipl/uddf/drivers/sensors/IMX900/CMakeLists.txt
+new file mode 100644
+index 0000000..6ce360d
+--- /dev/null
++++ b/sipl/uddf/drivers/sensors/IMX900/CMakeLists.txt
+@@ -0,0 +1,36 @@
++# SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++# SPDX-License-Identifier: Apache-2.0
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++add_library(imx900_driver
++    IMX900ModuleDriver.cpp
++    IMX900SensorDriver.cpp
++)
++add_library(uddf-cdd::imx900_driver ALIAS imx900_driver)
++
++target_compile_features(imx900_driver PUBLIC cxx_std_17)
++
++target_include_directories(imx900_driver
++    PUBLIC
++        ${CMAKE_CURRENT_SOURCE_DIR}
++        ${UDDF_CDD_COMMON}/helpers
++)
++
++target_link_libraries(imx900_driver PUBLIC uddf::uddf)
++
++hsl_add_driver_sources(imx900_driver
++  SOURCES fr_imx900_hsl.py
++  NAMESPACE uddf::samples::fr_imx900::hsl
++  DEPENDENCIES fr_imx900_data.py
++)
+diff --git a/sipl/uddf/drivers/sensors/IMX900/IMX900ModuleDriver.cpp b/sipl/uddf/drivers/sensors/IMX900/IMX900ModuleDriver.cpp
+new file mode 100644
+index 0000000..ef63b0a
+--- /dev/null
++++ b/sipl/uddf/drivers/sensors/IMX900/IMX900ModuleDriver.cpp
+@@ -0,0 +1,379 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include "IMX900ModuleDriver.hpp"
++
++#include <chrono>
++#include <cstdlib>
++#include <optional>
++#include <string_view>
++#include <iostream>
++#include <thread>
++
++#include "uddf/cdi/IHardwareAccess.hpp"
++#include "uddf/ddi/interfaces/ISensorCharMode.hpp"
++
++// Generated file containing HSL bytecode blobs
++#include "fr_imx900_hsl.hpp"
++
++namespace uddf::samples {
++
++using namespace uddf::ddi::interfaces;
++
++namespace {
++
++// Chromacity information register; bit 7 is 0 for colour, 1 for mono.
++constexpr uint16_t IMX900_CHROMACITY_REG { 0x3817U };
++
++// SubmitSequence returns before the queued bring-up (~80 ms of delays) has
++// run, and until it has the register reads 0x00 - indistinguishable from a
++// genuine colour sensor, so a premature read misdetects a mono part silently.
++// IHardwareAccess exposes no completion or flush call, so the only lever is
++// waiting. Measured on this board the value is readable ~2 ms after wake;
++// 500 ms is that with two orders of magnitude of headroom, paid once per Init.
++constexpr uint32_t CHROMACITY_SETTLE_MS { 500U };
++
++template<typename... Args>
++void log(Args... args) {
++    std::cout << "    [IMX900 module] ";
++    (std::cout << ... << args);
++    std::cout << std::endl;
++}
++
++using ConversionGain = IMX900SensorDriver::ConversionGain;
++
++// Process-wide for now: IMX900_CONVERSION_GAIN=0 (low) | 1 (high), the FDG_SEL
++// value; unset = 0. Move to the platform config once a per-camera field
++// reaches the driver.
++std::optional<ConversionGain> ConversionGainSetting() {
++    const char* const value = std::getenv("IMX900_CONVERSION_GAIN");
++    if ((value == nullptr) || (std::string_view(value) == "0")) {
++        return ConversionGain::Low;
++    }
++    if (std::string_view(value) == "1") {
++        return ConversionGain::High;
++    }
++    return std::nullopt;
++}
++
++using TriggerMode = IMX900ModuleDriver::TriggerMode;
++
++// Process-wide for now: IMX900_TRIGGER_MODE=0 (normal) | 1 (sequential) |
++// 2 (fast), the FRAMOS shutter-mode values; unset = 0.
++std::optional<TriggerMode> TriggerModeSetting() {
++    const char* const value = std::getenv("IMX900_TRIGGER_MODE");
++    if ((value == nullptr) || (std::string_view(value) == "0")) {
++        return TriggerMode::Normal;
++    }
++    if (std::string_view(value) == "1") {
++        return TriggerMode::Sequential;
++    }
++    if (std::string_view(value) == "2") {
++        return TriggerMode::Fast;
++    }
++    return std::nullopt;
++}
++
++const char* TriggerModeName(TriggerMode mode) {
++    switch (mode) {
++    case TriggerMode::Sequential: return "SEQUENTIAL";
++    case TriggerMode::Fast:       return "FAST";
++    default:                      return "NORMAL";
++    }
++}
++
++} // Anonymous namespace
++
++IMX900ModuleDriver::IMX900ModuleDriver() : m_is_streaming{} {
++}
++
++IMX900ModuleDriver::~IMX900ModuleDriver() {
++}
++
++void IMX900ModuleDriver::LogState(std::string_view label, uddf::cdi::IHardwareAccess& hwAccess) {
++    uint8_t standby_state {};
++    hwAccess.ReadI2C(fr_imx900::hsl::CAM_I2C_ADDRESS, 0x3000U, 1U, &standby_state);
++    log(label, " standby=0x", std::hex, static_cast<uint16_t>(standby_state));
++}
++
++uddf::ddi::IInterface*
++IMX900ModuleDriver::GetExtendedInterface(const uddf::ddi::UUID& uuid) noexcept {
++    if (uuid == uddf::ddi::interfaces::ISensorCharMode::id) {
++        return static_cast<uddf::ddi::interfaces::ISensorCharMode*>(&m_sensorDriver);
++    }
++    return nullptr;
++}
++
++// 0x3817 bit 7: 0 = colour, 1 = mono.
++bool IMX900ModuleDriver::ProbeChromacity(uddf::cdi::IHardwareAccess& hwAccess) {
++    hwAccess.SubmitSequence(fr_imx900::hsl::bringup);
++    hwAccess.SubmitSequence(fr_imx900::hsl::wake);
++    std::this_thread::sleep_for(std::chrono::milliseconds(CHROMACITY_SETTLE_MS));
++
++    uint8_t chromacity {};
++    hwAccess.ReadI2C(fr_imx900::hsl::CAM_I2C_ADDRESS,
++                     IMX900_CHROMACITY_REG, 1U, &chromacity);
++    hwAccess.SubmitSequence(fr_imx900::hsl::standby);
++
++    const bool isMono = ((chromacity & 0x80U) != 0U);
++    log("chromacity reg = 0x", std::hex, static_cast<uint16_t>(chromacity), std::dec,
++        " -> ", (isMono ? "MONO" : "COLOUR"), " sensor");
++    return isMono;
++}
++
++ICameraSensorControl*
++IMX900ModuleDriver::GetSensorControl(const CameraModuleContext& context,
++                                     size_t index) {
++    log("GetSensorControl called for index: ", index, ".");
++    if (index == 0) {
++        log("Returning sensor control pointer.");
++        return static_cast<ICameraSensorControl*>(&m_sensorDriver);
++    }
++    log("No such sensor control index (", index, ") found.");
++    return nullptr;
++}
++
++ICameraSensorInfo*
++IMX900ModuleDriver::GetCameraSensorInfo(const CameraModuleContext& context,
++                                        size_t index) {
++    log("GetCameraSensorInfo called for index: ", index, ".");
++    if (index == 0) {
++        return static_cast<ICameraSensorInfo*>(&m_sensorDriver);
++    }
++    return nullptr;
++}
++
++bool IMX900ModuleDriver::StartStreaming(const CameraModuleContext& context) {
++    LogState("StartStreaming called", *context.hwAccess);
++    // XMSTA=0 on a target would start its own timing against the controller's.
++    if (m_isTarget) {
++        context.hwAccess->SubmitSequence(fr_imx900::hsl::start_target);
++    } else {
++        context.hwAccess->SubmitSequence(fr_imx900::hsl::start);
++    }
++    m_is_streaming = true;
++    return true;
++}
++
++bool IMX900ModuleDriver::StopStreaming(const CameraModuleContext& context) {
++    LogState("StopStreaming called", *context.hwAccess);
++    context.hwAccess->SubmitSequence(fr_imx900::hsl::stop);
++    m_is_streaming = false;
++    return true;
++}
++
++const uddf::ddi::DeviceTable& IMX900ModuleDriver::GetDeviceTable() noexcept {
++    // The 0x70 mux and 0x20 IO expander latch a single command byte, so both
++    // are declared 1-byte. At 2 bytes their register pointer came out as the
++    // high half of the offset (always 0x00, the read-only Input Port) and every
++    // write to them was silently dropped - see fr_imx900_hsl.py.
++    static const uddf::ddi::DeviceTable table {
++        {fr_imx900::hsl::CAM_I2C_ADDRESS, 2, 1, 0},   // sensor (0x1A), 16-bit registers
++        {fr_imx900::hsl::I2C_EXPANDER_I2C_ADDRESS, 1, 1, 0},  // I2C mux (0x70), one command byte
++        {fr_imx900::hsl::GPIO_EXPANDER_I2C_ADDRESS, 1, 1, 0}, // IO expander (0x20), one command byte
++    };
++    return table;
++}
++
++bool IMX900ModuleDriver::ConfigureDriver(const CoEModuleContext& context, uddf::ddi::DeviceTable& deviceTable) {
++    bool have_valid_configuration {true};
++
++    log("ConfigureDriver called: CoE configuration (IP: ",
++        context.config.ip, ", MAC: ", context.config.mac,
++        ", width: ", context.config.width, ", height: ", context.config.height,
++        ", frameRate: ", context.config.frameRate, ", pixelFormat: ", context.config.pixelFormat, ")");
++
++    // Remember the resolution so Init picks the matching mode table, and give
++    // the sensor driver its timing now: SIPL reads GetSensorAttributes before
++    // Init runs, so setting it there would advertise the wrong exposure range.
++    m_width = context.config.width;
++    m_height = context.config.height;
++    m_isStereo = context.config.isStereo;
++
++    // The chromacity cannot be probed here since context.hwAccess is null.
++    // Refusing a size here, before any hardware access, keeps an unsupported
++    // mode from being programmed with the full-frame table.
++    if (!m_sensorDriver.SetMode(m_width, m_height, context.config.frameRate)) {
++        have_valid_configuration = false;
++    }
++
++    // Here, not in Init: HCG lifts the gain floor SIPL reads from the attributes.
++    if (const auto conversionGain = ConversionGainSetting()) {
++        m_sensorDriver.SetConversionGain(*conversionGain);
++        log("  conversion gain ", (*conversionGain == ConversionGain::High) ? "HIGH" : "LOW");
++    } else {
++        log("  ERROR: IMX900_CONVERSION_GAIN=\"", std::getenv("IMX900_CONVERSION_GAIN"),
++            "\" - use 0 (low) or 1 (high)");
++        have_valid_configuration = false;
++    }
++
++    // The sensor allows sequential trigger only as target, fast only as controller.
++    const auto triggerMode = TriggerModeSetting();
++    if (!triggerMode) {
++        log("  ERROR: IMX900_TRIGGER_MODE=\"", std::getenv("IMX900_TRIGGER_MODE"),
++            "\" - use 0 (normal), 1 (sequential) or 2 (fast)");
++        have_valid_configuration = false;
++    } else if ((*triggerMode == TriggerMode::Sequential) && !m_isStereo) {
++        log("  ERROR: sequential trigger needs the sync target (J6 in IMX900_DUAL_SYNC)");
++        have_valid_configuration = false;
++    } else if ((*triggerMode == TriggerMode::Fast) && m_isStereo) {
++        log("  ERROR: fast trigger needs the controller, not the sync target");
++        have_valid_configuration = false;
++    } else {
++        m_triggerMode = *triggerMode;
++        log("  trigger mode ", TriggerModeName(m_triggerMode));
++    }
++
++    const auto& table = GetDeviceTable();
++    deviceTable.insert(deviceTable.end(), table.begin(), table.end());
++
++    return have_valid_configuration;
++}
++
++bool IMX900ModuleDriver::ProbeHardware(const CoEModuleContext& context) {
++    // This SIPL runtime never calls the module driver's ProbeHardware - it was
++    // confirmed absent from every streaming run. Sensor bring-up (the GPIO
++    // enable pulse and settle) therefore lives in the init sequence, which Init
++    // submits; see seq_init in fr_imx900_hsl.py.
++    log("ProbeHardware called");
++    LogState("ProbeHardware completed", *context.hwAccess);
++    return true;
++}
++
++bool IMX900ModuleDriver::Init(const CoEModuleContext& context) {
++    log("Init called - bringing sensor up and programming registers");
++    m_isMono = ProbeChromacity(*context.hwAccess);
++    context.hwAccess->SubmitSequence(fr_imx900::hsl::init_settings);
++
++    // Height identifies the mode: 1080 the ROI crop, 776 the 1/2 subsampled
++    // readout, anything else the full frame. std::dec explicitly - another
++    // driver leaves std::hex set on std::cout.
++    // A subsampled or binned mode is variant-specific: the wrong config gives
++    // the wrong SHS floor and a broken readout, with no other symptom.
++    const auto needed = m_sensorDriver.ModeVariant();
++    if ((needed == IMX900SensorDriver::Variant::Mono) && !m_isMono) {
++        log("  ERROR: this config is for a MONO sensor but a COLOUR one is "
++            "fitted - use the non-_MONO config for ", std::dec, m_width, "x", m_height);
++    } else if ((needed == IMX900SensorDriver::Variant::Colour) && m_isMono) {
++        log("  ERROR: this config is for a COLOUR sensor but a MONO one is "
++            "fitted - use the _MONO config for ", std::dec, m_width, "x", m_height);
++    }
++
++    log("  programming ", std::dec, m_width, "x", m_height,
++        (m_isMono ? " mono" : " colour"));
++    // Each sequence is its own HSLStaticSequence<N> type, so no ternary here.
++    if (m_height == 720U) {
++        // 2x2 average is a mono-only readout; a colour part has no equivalent.
++        if (m_isMono) {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::mode_1024x720_raw12_mono);
++        } else {
++            // The 1/2 subsampling fallback will be available in a future release.
++            // log("  WARNING: 2x2 average is mono-only; falling back to 1/2 subsampling");
++            // context.hwAccess->SubmitSequence(fr_imx900::hsl::mode_1032x776_raw12);
++            log("  ERROR: 2x2 average is mono-only and there is no colour fallback");
++            return false;
++        }
++    }
++#if 0
++    // 1920x1080 and 1032x776 will be available in a future release.
++    else if (m_height == 1080U) {
++        if (m_isMono) {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::mode_1920x1080_raw12_mono);
++        } else {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::mode_1920x1080_raw12);
++        }
++    } else if (m_height == 776U) {
++        if (m_isMono) {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::mode_1032x776_raw12_mono);
++        } else {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::mode_1032x776_raw12);
++        }
++    }
++#endif
++    else {
++        if (m_isMono) {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::mode_2048x1552_raw12_mono);
++        } else {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::mode_2048x1552_raw12);
++        }
++    }
++
++    // The mode table programs the top rate; this lowers it to the configured fps.
++    m_sensorDriver.ApplyFrameLength(*context.hwAccess);
++
++    // The sensor marked with sensorGroup follows the other's XVS/XHS
++    // (IMX900_DUAL_SYNC: J6). Unmarked configs never wait for one.
++    // TODO: change when config is updated
++    m_isTarget = m_isStereo;
++
++    if (m_isTarget) {
++        context.hwAccess->SubmitSequence(fr_imx900::hsl::target_mode);
++    }
++    log("  sync role ", (m_isTarget ? "TARGET: XVS/XHS inputs" : "CONTROLLER"));
++
++    // The mode tables don't set FDG_SEL, so write it here, low included,
++    // instead of relying on the sensor's power-up value.
++    if (m_sensorDriver.GetConversionGain() == ConversionGain::High) {
++        context.hwAccess->SubmitSequence(fr_imx900::hsl::conversion_gain_high);
++    } else {
++        context.hwAccess->SubmitSequence(fr_imx900::hsl::conversion_gain_low);
++    }
++
++    // Exposure then starts on XTRIG instead of the internal timing. Normal
++    // needs nothing: the mode tables program it.
++    if (m_triggerMode == TriggerMode::Fast) {
++        if (m_height == 720U) {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::trigger_fast_1024x720);
++        } else {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::trigger_fast_2048x1552);
++        }
++    } else if (m_triggerMode == TriggerMode::Sequential) {
++        if (m_height == 720U) {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::trigger_sequential_1024x720);
++        } else {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::trigger_sequential_2048x1552);
++        }
++    }
++
++    LogState("Init complete", *context.hwAccess);
++    return true;
++}
++
++bool IMX900ModuleDriver::Deinit(const CoEModuleContext& context) {
++    LogState("Deinit called", *context.hwAccess);
++
++    // Deinit can be reached without a preceding StopStreaming (an aborted
++    // pipeline, or a client that just tears down). Without this the sensor is
++    // left running - XMSTA active, never returned to standby - still pushing
++    // frames at the bridge. Mirrors EagleModuleDriver::Deinit.
++    if (m_is_streaming) {
++        log("Stopping streaming during deinit");
++        if (context.hwAccess != nullptr) {
++            context.hwAccess->SubmitSequence(fr_imx900::hsl::stop);
++        }
++        m_is_streaming = false;
++    }
++
++    return true;
++}
++
++bool IMX900ModuleDriver::Reset(const CoEModuleContext& context) {
++    LogState("Reset called", *context.hwAccess);
++    return true;
++}
++
++} // namespace uddf::samples
+diff --git a/sipl/uddf/drivers/sensors/IMX900/IMX900ModuleDriver.hpp b/sipl/uddf/drivers/sensors/IMX900/IMX900ModuleDriver.hpp
+new file mode 100644
+index 0000000..abed5f2
+--- /dev/null
++++ b/sipl/uddf/drivers/sensors/IMX900/IMX900ModuleDriver.hpp
+@@ -0,0 +1,98 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef UDDF_SAMPLES_IMX900MODULEDRIVER_HPP
++#define UDDF_SAMPLES_IMX900MODULEDRIVER_HPP
++
++#include "CoEModuleDriverBase.hpp"
++#include "uddf/cdi/IHardwareAccess.hpp"
++#include "uddf/ddi/interfaces/ICameraSensorControl.hpp"
++#include "uddf/ddi/interfaces/ICameraSensorInfo.hpp"
++#include "IMX900SensorDriver.hpp"
++
++#include <string_view>
++
++namespace uddf::samples {
++
++using namespace uddf::ddi::interfaces;
++
++class IMX900ModuleDriver final : public CoEModuleDriverBase {
++public:
++    /**
++     * @brief The I2C devices this module's HSL sequences touch, with the
++     *        register-offset width each one needs.
++     *
++     * Single source of truth: ConfigureDriver() hands this to the framework,
++     * and the module library hands the same table to the transport (see
++     * HsbOffsetWidthTransport) because the framework does not forward the
++     * widths itself. Must match the I2CDevice declarations in fr_imx900_hsl.py.
++     */
++    static const uddf::ddi::DeviceTable& GetDeviceTable() noexcept;
++
++    /** @brief Exposure start: internal timing, or an XTRIG pulse (FRAMOS shutter mode). */
++    enum class TriggerMode { Normal, Sequential, Fast };
++
++    explicit IMX900ModuleDriver();
++    ~IMX900ModuleDriver() override;
++
++    // --- ICameraModule Methods ---
++
++    ICameraSensorControl* GetSensorControl(const CameraModuleContext& context, size_t index) override;
++    ICameraSensorInfo* GetCameraSensorInfo(const CameraModuleContext& context, size_t index) override;
++    bool StartStreaming(const CameraModuleContext& context) override;
++    bool StopStreaming(const CameraModuleContext& context) override;
++
++    // --- ICoEModuleControl Methods ---
++
++    bool ConfigureDriver(const CoEModuleContext& context, uddf::ddi::DeviceTable& deviceTable) override;
++    bool ProbeHardware(const CoEModuleContext& context) override;
++    bool Init(const CoEModuleContext& context) override;
++    bool Deinit(const CoEModuleContext& context) override;
++    bool Reset(const CoEModuleContext& context) override;
++
++protected:
++    /** @brief Expose ISensorCharMode; the base class does not aggregate it. */
++    uddf::ddi::IInterface* GetExtendedInterface(const uddf::ddi::UUID& uuid) noexcept override;
++
++    IMX900SensorDriver m_sensorDriver;
++
++private:
++    void LogState(std::string_view label, uddf::cdi::IHardwareAccess& hwAccess);
++
++    /** @brief Power the sensor and read 0x3817; true when a mono part is fitted. */
++    bool ProbeChromacity(uddf::cdi::IHardwareAccess& hwAccess);
++    bool m_is_streaming;
++
++    // Resolution SIPL configured; set in ConfigureDriver, read by Init.
++    uint32_t m_width { 2048U };
++    uint32_t m_height { 1552U };
++
++    bool m_isMono { false };
++
++    // sensorGroup > 0 in the config marks the target (J6 in IMX900_DUAL_SYNC);
++    // CoEModuleContext names no port, isStereo is the only per-camera flag.
++    bool m_isStereo { false };
++    // Set in Init from m_isStereo: follows the other sensor's XVS/XHS.
++    bool m_isTarget { false };
++
++    // Set in ConfigureDriver; checked against the role there.
++    TriggerMode m_triggerMode { TriggerMode::Normal };
++};
++
++} // namespace uddf::samples
++
++#endif // UDDF_SAMPLES_IMX900MODULEDRIVER_HPP
+diff --git a/sipl/uddf/drivers/sensors/IMX900/IMX900SensorDriver.cpp b/sipl/uddf/drivers/sensors/IMX900/IMX900SensorDriver.cpp
+new file mode 100755
+index 0000000..b08fca3
+--- /dev/null
++++ b/sipl/uddf/drivers/sensors/IMX900/IMX900SensorDriver.cpp
+@@ -0,0 +1,445 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include "IMX900SensorDriver.hpp"
++
++#include <iostream>
++#include <string>
++#include <cmath>
++#include <algorithm>
++#include <cstdlib>
++
++#include "uddf/ddi/interfaces/SensorControlTypes.hpp"
++#include "uddf/cdi/IHardwareAccess.hpp"
++#include "uddf/cdi/IDriverServices.hpp"
++
++// Generated file containing HSL bytecode blobs
++#include "fr_imx900_hsl.hpp"
++
++namespace uddf::samples {
++
++using namespace uddf::ddi::interfaces;
++using namespace fr_imx900::hsl;
++
++namespace {
++
++template<typename... Args>
++void log(Args... args) {
++    std::cout << "    [IMX900 sensor] ";
++    (std::cout << ... << args);
++    std::cout << std::endl;
++}
++
++bool debugLogEnabled() {
++    static const bool enabled = [] {
++        const char* const env = std::getenv("IMX900_DEBUG");
++        return (env != nullptr) && (env[0] != '\0') && (env[0] != '0');
++    }();
++    return enabled;
++}
++
++template<typename... Args>
++void logDebug(Args... args) {
++    if (!debugLogEnabled()) {
++        return;
++    }
++    std::cout << "    [IMX900 sensor][DEBUG] ";
++    (std::cout << ... << args);
++    std::cout << std::endl;
++}
++
++// The HMAX_*, VMAX_* values, MIN_SHS and INCK_HZ come from fr_imx900_data.py.
++static constexpr float CLK_HZ { static_cast<float>(INCK_HZ) };
++
++// Frame timing per mode. Mono 1/2 subsampling shares a resolution with the
++// colour one but runs a shorter line, so the configured frame rate separates
++// them - the chromacity is not known this early.
++struct ModeTiming {
++    uint32_t width;
++    uint32_t height;
++    float    fps;
++    uint32_t hmax;
++    uint32_t vmax;
++    // SHS floor = GMTWT + GMRWT2 of the mode's readout set, as FRAMOS reads
++    // back at runtime. Programming below it breaks the readout.
++    uint32_t minShs;
++    sensor_control::PixelOrder cfa;
++    // Full-resolution modes share timing between variants; the subsampled and
++    // binned ones do not, so using the wrong config gives a broken readout.
++    IMX900SensorDriver::Variant variant;
++};
++
++static constexpr ModeTiming MODES[] = {
++    { 2048U, 1552U,  72.1F, HMAX,          VMAX_2048X1552,     MIN_SHS,          sensor_control::PixelOrder::RGGB, IMX900SensorDriver::Variant::Any },
++    // 1920x1080 and 1032x776 will be available in a future release.
++    // { 1920U, 1080U, 100.0F, HMAX,          VMAX_1920X1080,     MIN_SHS,          sensor_control::PixelOrder::RGGB, IMX900SensorDriver::Variant::Any },
++    // { 1032U,  776U, 136.6F, HMAX,          VMAX_1032X776,      MIN_SHS,          sensor_control::PixelOrder::GBRG, IMX900SensorDriver::Variant::Colour },
++    // { 1032U,  776U, 160.0F, HMAX_MONO_SUB, VMAX_1032X776_MONO, MIN_SHS_MONO_SUB, sensor_control::PixelOrder::GBRG, IMX900SensorDriver::Variant::Mono },
++    { 1024U,  720U, 160.1F, HMAX_MONO_SUB, VMAX_1024X720_MONO, MIN_SHS_MONO_SUB, sensor_control::PixelOrder::NONE, IMX900SensorDriver::Variant::Mono },
++};
++
++static constexpr float FPS_MIN { 1.5F };
++
++// No HDR: exposure 0 is the only one.
++static constexpr uint8_t IMX900_NUM_EXPOSURES { 1U };
++
++static constexpr float SENSOR_GAIN_MIN { 1.0F };
++static constexpr float SENSOR_GAIN_MAX { 248.0F };
++static constexpr float GAIN_DB_SCALE { 200.0F };
++static constexpr uint16_t GAIN_REG_MAX { 479U };
++// HCG floor as linear gain: 10^(reg / 200), reg 30 = 3 dB = 1.413x.
++const float SENSOR_GAIN_MIN_HCG {
++    std::pow(10.0F, static_cast<float>(fr_imx900::hsl::GAIN_REG_MIN_HCG) / GAIN_DB_SCALE) };
++
++// VMAX for the requested fps. The table VMAX is the readout floor, i.e. the
++// mode's top rate; a lower fps only stretches the frame.
++uint32_t VmaxForFps(const ModeTiming& mode, float fps) {
++    const float maxFps = CLK_HZ / (static_cast<float>(mode.hmax) * static_cast<float>(mode.vmax));
++    if (!std::isfinite(fps) || (fps <= 0.0F)) {
++        fps = maxFps;
++    } else if (fps < FPS_MIN) {
++        log("WARNING: ", fps, " fps is below minimum ", FPS_MIN, ", clamping");
++        fps = FPS_MIN;
++    } else if (fps > mode.fps) {
++        // mode.fps, not maxFps: the table rate is rounded, e.g. 72.1 for 72.07.
++        log("WARNING: ", fps, " fps is above the mode maximum ", maxFps, ", clamping");
++    }
++    const uint32_t vmax = static_cast<uint32_t>(
++        std::lround(CLK_HZ / (static_cast<float>(mode.hmax) * fps)));
++    return std::max(vmax, mode.vmax);
++}
++
++} // Anonymous namespace
++
++bool IMX900SensorDriver::SetSensorCharMode([[maybe_unused]] uddf::cdi::IHardwareAccess& hwAccess,
++                                           uddf::cdi::IDriverServices& driverServices,
++                                           const uint8_t exposureNumber) {
++    log("SetSensorCharMode called for exposure ",
++        static_cast<uint32_t>(exposureNumber));
++    UDDF_LOG_DEBUG(driverServices, "SetSensorCharMode called with exposureNumber=%u",
++                   static_cast<uint32_t>(exposureNumber));
++
++    if (exposureNumber >= IMX900_NUM_EXPOSURES) {
++        UDDF_LOG_ERROR(driverServices,
++                       "IMX900: exposure number %u exceeds maximum %u",
++                       static_cast<uint32_t>(exposureNumber),
++                       static_cast<uint32_t>(IMX900_NUM_EXPOSURES - 1U));
++        log("SetSensorCharMode: exposure ", static_cast<uint32_t>(exposureNumber),
++            " out of range (single-exposure sensor)");
++        return false;
++    }
++
++    m_charModeEnabled = true;
++
++    log("SetSensorCharMode: characterization mode enabled");
++    return true;
++}
++
++bool IMX900SensorDriver::SetMode(const uint32_t width, const uint32_t height,
++                                 const float fps) {
++    // Resolution alone is ambiguous: mono and colour 1/2 subsampling are both
++    // 1032x776, so the configured frame rate picks between them.
++    const ModeTiming* best { nullptr };
++    float bestDelta { 0.0f };
++    for (const ModeTiming& mode : MODES) {
++        if ((mode.width != width) || (mode.height != height)) {
++            continue;
++        }
++        const float delta = std::fabs(mode.fps - fps);
++        if ((best == nullptr) || (delta < bestDelta)) {
++            best = &mode;
++            bestDelta = delta;
++        }
++    }
++
++    if (best == nullptr) {
++        log("ERROR: no timing entry for ", std::dec, width, "x", height,
++            " - mode not supported");
++        return false;
++    }
++
++    m_hmax = best->hmax;
++    m_vmax = VmaxForFps(*best, fps);
++    m_cfa = best->cfa;
++    m_minShs = best->minShs;
++    m_variant = best->variant;
++    m_lineTimeNs = (static_cast<float>(m_hmax) / CLK_HZ) * 1e9f;
++    m_minExposure = m_lineTimeNs * 1e-9f;
++    m_maxExposure = static_cast<float>(m_vmax - m_minShs) * m_lineTimeNs * 1e-9f;
++    log("SetMode ", std::dec, width, "x", height, " @ ", fps, " fps: HMAX=", m_hmax,
++        " VMAX=", m_vmax, " -> ",
++        CLK_HZ / (static_cast<float>(m_hmax) * static_cast<float>(m_vmax)), " fps");
++    return true;
++}
++
++void IMX900SensorDriver::ApplyFrameLength(uddf::cdi::IHardwareAccess& hwAccess) const {
++    fr_imx900::hsl::vmax_register vmaxReg{};
++    vmaxReg.vmax[0] = static_cast<uint8_t>(m_vmax & 0xFFU);
++    vmaxReg.vmax[1] = static_cast<uint8_t>((m_vmax >> 8U) & 0xFFU);
++    vmaxReg.vmax[2] = static_cast<uint8_t>((m_vmax >> 16U) & 0xFFU);
++    hwAccess.SubmitSequence(fr_imx900::hsl::set_vmax, vmaxReg);
++}
++
++IMX900SensorDriver::IMX900SensorDriver() {
++    // Keep the derived values consistent with the defaults until SetMode runs.
++    m_lineTimeNs = (static_cast<float>(m_hmax) / CLK_HZ) * 1e9f;
++    m_minExposure = m_lineTimeNs * 1e-9f;
++    m_maxExposure = static_cast<float>(m_vmax - m_minShs) * m_lineTimeNs * 1e-9f;
++}
++
++IMX900SensorDriver::~IMX900SensorDriver() {
++}
++
++bool IMX900SensorDriver::GetSensorAttributes(uddf::cdi::IDriverServices& driverServices,
++                                              SensorAttributes& attributes) const {
++    UDDF_LOG_DEBUG(driverServices, "GetSensorAttributes called - IMX900 Sensor Driver");
++    log("GetSensorAttributes called - IMX900 Sensor Driver");
++    attributes = SensorAttributes{};
++
++    attributes.sensorName = std::string("IMX900");
++    attributes.sensorCFA = m_cfa;
++    attributes.numActiveExposures = 1;
++    attributes.sensorFuseId.fill(0);
++
++    attributes.sensorExpRange[0].min = m_minExposure;
++    attributes.sensorExpRange[0].max = m_maxExposure;
++
++    attributes.sensorGainRange[0].min = GainMin();
++    attributes.sensorGainRange[0].max = SENSOR_GAIN_MAX;
++
++    attributes.sensorWhiteBalanceRange[0].min = 1.0f;
++    attributes.sensorWhiteBalanceRange[0].max = 4.0f;
++
++    attributes.sensorGainFactor[0] = 1.0f;
++
++    return true;
++}
++
++float IMX900SensorDriver::GainMin() const {
++    return (m_conversionGain == ConversionGain::High) ? SENSOR_GAIN_MIN_HCG : SENSOR_GAIN_MIN;
++}
++
++bool IMX900SensorDriver::SetGain(uddf::cdi::IHardwareAccess& hwAccess,
++                                 uddf::cdi::IDriverServices& driverServices,
++                                 const sensor_control::ExposureGainInfo& exposureGainControl){
++
++    if (!(exposureGainControl.sensorGain && exposureGainControl.sensorGain->count > 0U)) {
++        log(" exposureGainControl[0].sensorGain is not set");
++        return false;
++    }
++
++    logDebug("  exposureGainControl[0].sensorGain[0]=",
++        exposureGainControl.sensorGain->data[0],
++        " (count=", exposureGainControl.sensorGain->count, ")");
++    float gain = exposureGainControl.sensorGain->data[0];
++    logDebug("  gain=", gain);
++
++    const float gainMin = GainMin();
++    if (gain < gainMin) {
++        log("  WARNING: requested gain ", gain,
++            " is below minimum ", gainMin,
++            ", clamping to minimum");
++    } else if (gain > SENSOR_GAIN_MAX) {
++        log("  WARNING: requested gain ", gain,
++            " is above maximum ", SENSOR_GAIN_MAX,
++            ", clamping to maximum");
++    }
++    gain = std::clamp(gain, gainMin, SENSOR_GAIN_MAX);
++    logDebug("  gain=", gain);
++
++    uint16_t gain_reg = static_cast<uint16_t>(std::round(GAIN_DB_SCALE * std::log10(gain)));
++    logDebug("  gain_reg=", gain_reg, " (0x", std::hex, gain_reg, std::dec, ")");
++    const uint16_t gainRegMin = (m_conversionGain == ConversionGain::High)
++        ? static_cast<uint16_t>(fr_imx900::hsl::GAIN_REG_MIN_HCG) : static_cast<uint16_t>(0U);
++    gain_reg = std::clamp(gain_reg, gainRegMin, GAIN_REG_MAX);
++
++    fr_imx900::hsl::gain_register gainReg{};
++    gainReg.gain[0] = static_cast<uint8_t>(gain_reg & 0xFFU);
++    gainReg.gain[1] = static_cast<uint8_t>((gain_reg >> 8U) & 0x01U);
++
++    logDebug("  gain_reg = ", gain_reg, " gain_reg 0 =", static_cast<unsigned>(gainReg.gain[0]),
++             " gain_reg 1 =", static_cast<unsigned>(gainReg.gain[1]));
++
++    hwAccess.SubmitSequence(fr_imx900::hsl::set_gain, gainReg);
++
++    return true;
++}
++
++bool IMX900SensorDriver::SetExposure(uddf::cdi::IHardwareAccess& hwAccess,
++                                     uddf::cdi::IDriverServices& driverServices,
++                                     const sensor_control::ExposureGainInfo& exposureGainControl){
++
++    if (!(exposureGainControl.exposureTime && exposureGainControl.exposureTime->count > 0U)) {
++        log("  exposureGainControl[0].exposureTime is not set");
++        return false;
++    }
++
++    logDebug("  exposureGainControl[0].exposureTime[0]=",
++        exposureGainControl.exposureTime->data[0],
++        " s (count=", exposureGainControl.exposureTime->count, ")");
++
++    float exposure_time = exposureGainControl.exposureTime->data[0];
++    logDebug("  exposure_time=", exposure_time, " s");
++
++    if (!std::isfinite(exposure_time) || exposure_time <= 0.0f) {
++        log("  WARNING: invalid exposure time ", exposure_time, " s, ignoring");
++        return false;
++    }
++
++    int64_t integration_line = static_cast<int64_t>(exposure_time / (m_lineTimeNs * 1e-9f));
++
++    int64_t shs_reg = m_vmax - integration_line;
++    logDebug("  shs_reg=", shs_reg, " (0x", std::hex, shs_reg, std::dec, ")");
++    if (shs_reg < static_cast<int64_t>(m_minShs)) {
++        log("  WARNING: shs_reg ", shs_reg,
++            " is below minimum ", m_minShs,
++            ", clamping to minimum");
++        shs_reg = m_minShs;
++    } else if (shs_reg > m_vmax - 1) {
++        log("  WARNING: shs_reg ", shs_reg,
++            " is above maximum ", m_vmax - 1,
++            ", clamping to maximum");
++        shs_reg = m_vmax - 1;
++    }
++    logDebug("  shs_reg=", shs_reg, " (0x", std::hex, shs_reg, std::dec, ")");
++
++    uint32_t exposure_reg = static_cast<uint32_t>(shs_reg);
++    logDebug("  exposure_reg=", exposure_reg, " (0x", std::hex, exposure_reg, std::dec, ")");
++
++    fr_imx900::hsl::exposure_register expReg{};
++    expReg.exposure[0] = static_cast<uint8_t>(exposure_reg & 0xFFU);
++    expReg.exposure[1] = static_cast<uint8_t>((exposure_reg >> 8U) & 0xFFU);
++    expReg.exposure[2] = static_cast<uint8_t>((exposure_reg >> 16U) & 0xFFU);
++
++    logDebug("  exposure_reg = ", exposure_reg,
++        " exposure_reg 0 =", static_cast<unsigned>(expReg.exposure[0]),
++        " exposure_reg 1 =", static_cast<unsigned>(expReg.exposure[1]),
++        " exposure_reg 2 =", static_cast<unsigned>(expReg.exposure[2]));
++
++    hwAccess.SubmitSequence(fr_imx900::hsl::set_exposure, expReg);
++
++    return true;
++}
++
++bool IMX900SensorDriver::SetSensorControls(uddf::cdi::IHardwareAccess& hwAccess,
++                                            uddf::cdi::IDriverServices& driverServices,
++                                            const SensorControls& controls) {
++    logDebug("SetSensorControls called - IMX900 Sensor Driver");
++    bool result = true;
++
++    logDebug("setting controls");
++
++    // One REGHOLD bracket around both writes rather than one each: on the CoE
++    // path every I2C transaction is a round trip to the HSB, so the bracket
++    // costs as much as the data it protects.
++    hwAccess.SubmitSequence(fr_imx900::hsl::reghold_on);
++
++    if (!SetExposure(hwAccess, driverServices, controls.exposureGainControl[0])) {
++        log("SetExposure failed");
++        result = false;
++    }
++
++    if (!SetGain(hwAccess, driverServices, controls.exposureGainControl[0])) {
++        log("SetGain failed");
++        result = false;
++    }
++
++    hwAccess.SubmitSequence(fr_imx900::hsl::reghold_off);
++
++    return result;
++}
++
++bool IMX900SensorDriver::ParseTopEmbeddedData(uddf::cdi::IDriverServices& driverServices,
++                                               const EmbeddedDataChunk& chunk,
++                                               EmbeddedDataInfo& info) {
++    logDebug("ParseTopEmbeddedData called - Chunk lineLength: ", chunk.lineLength, " bytes");
++
++    uint32_t gain_reg = chunk.lineData[51] + 256 * (chunk.lineData[49] % 2);
++    uint32_t shs_reg = chunk.lineData[19] + 256 * chunk.lineData[18] + 65536 * chunk.lineData[16];
++
++    logDebug("  gain reg=", gain_reg, " (0x", std::hex, gain_reg, std::dec,
++        ") exposure reg=", shs_reg, " (0x", std::hex, shs_reg, std::dec,
++        ") VMAX=", m_vmax, " (0x", std::hex, m_vmax, std::dec, ")");
++
++    float gain_time = std::pow(10.0f, static_cast<float>(gain_reg) / GAIN_DB_SCALE);
++
++    if (gain_time > SENSOR_GAIN_MAX) {
++        gain_time = SENSOR_GAIN_MAX;
++        log("gain value too large, setting to maximal gain_time=", gain_time);
++    } else if (gain_time < SENSOR_GAIN_MIN) {
++        gain_time = SENSOR_GAIN_MIN;
++        log("gain value too small, setting to minimal gain_time=", gain_time);
++    }
++
++    int64_t integration_line = m_vmax - shs_reg;
++    logDebug("  integration line =", integration_line);
++
++    if (integration_line < 2) {
++        logDebug("  integration line too small, setting to 1");
++        integration_line = 2;
++    } else if (integration_line > static_cast<int64_t>(m_vmax - m_minShs)) {
++        logDebug("  integration line too large, setting to VMAX - MIN_SHS");
++        integration_line = m_vmax - m_minShs;
++    }
++
++    float exposure = integration_line * m_lineTimeNs * 1e-9f;
++    logDebug("  exposure = ", exposure);
++
++    if (exposure < m_minExposure) {
++        log(" exposure out of range setting to m_minExposure ", m_minExposure);
++        exposure = m_minExposure;
++    } else if (exposure > m_maxExposure) {
++        log(" exposure out of range setting to MAX_EXPOSURE ", m_maxExposure);
++        exposure = m_maxExposure;
++    }
++
++    info.numExposures = 1U;
++
++    info.exposureGainInfo = uddf::ddi::interfaces::sensor_control::ExposureGainInfo {
++            .exposureTime = uddf::ddi::interfaces::sensor_control::ExposureGainInfo::ExposureArray {
++                .count = 1U,
++                .data = {{exposure}}
++            },
++            .sensorGain = uddf::ddi::interfaces::sensor_control::ExposureGainInfo::GainArray {
++                .count = 1U,
++                .data = {{gain_time}}
++            }
++    };
++
++    info.sensorWBGainInfo = uddf::ddi::interfaces::sensor_control::SensorControls::WbGainArray {
++            .count = 1U,
++            .data = {{{{ 1.0f, 1.0f, 1.0f, 1.0f }}}}
++        };
++
++    info.sensorTempData = uddf::ddi::interfaces::sensor_control::SensorTempData {
++        .numTemperatures = 1U,
++        .sensorTempCelsius = {{22.0}}
++    };
++
++    info.frameSequenceNumber = m_artificialFrameCounter++;
++
++    return true;
++}
++
++bool IMX900SensorDriver::ParseBottomEmbeddedData(uddf::cdi::IDriverServices& driverServices,
++                                                  const EmbeddedDataChunk& chunk,
++                                                  EmbeddedDataInfo& info) {
++    logDebug("ParseBottomEmbeddedData called - Chunk lineLength: ", chunk.lineLength, " bytes");
++    return true;
++}
++
++} // namespace uddf::samples
+diff --git a/sipl/uddf/drivers/sensors/IMX900/IMX900SensorDriver.hpp b/sipl/uddf/drivers/sensors/IMX900/IMX900SensorDriver.hpp
+new file mode 100644
+index 0000000..287ce7d
+--- /dev/null
++++ b/sipl/uddf/drivers/sensors/IMX900/IMX900SensorDriver.hpp
+@@ -0,0 +1,123 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef UDDF_SAMPLES_IMX900SENSORDRIVER_HPP
++#define UDDF_SAMPLES_IMX900SENSORDRIVER_HPP
++
++#include "uddf/cdi/IHardwareAccess.hpp"
++#include "uddf/ddi/interfaces/ICameraSensorControl.hpp"
++#include "uddf/ddi/interfaces/ICameraSensorInfo.hpp"
++#include "uddf/ddi/interfaces/ISensorCharMode.hpp"
++
++namespace uddf::samples {
++
++using namespace uddf::ddi::interfaces;
++
++class IMX900SensorDriver final : public ICameraSensorControl,
++                                 public ICameraSensorInfo,
++                                 public uddf::ddi::interfaces::ISensorCharMode {
++public:
++    explicit IMX900SensorDriver();
++    ~IMX900SensorDriver() override;
++
++    // --- ISensorCharMode Methods ---
++
++    bool SetSensorCharMode(uddf::cdi::IHardwareAccess& hwAccess,
++                           uddf::cdi::IDriverServices& driverServices,
++                           uint8_t exposureNumber) override;
++
++    /**
++     * @brief Select the frame timing for the resolution SIPL configured.
++     *
++     * Exposure is SHS = VMAX - lines, so VMAX has to match the mode table
++     * Init programs or every exposure is wrong by the ratio of the two.
++     */
++    /** @brief Which sensor variant a mode requires. */
++    enum class Variant { Any, Colour, Mono };
++
++    /** @brief Select the mode timing; false if the driver has no such mode. */
++    bool SetMode(uint32_t width, uint32_t height, float fps);
++
++    /** @brief Write the VMAX SetMode derived from the fps. After the mode table. */
++    void ApplyFrameLength(uddf::cdi::IHardwareAccess& hwAccess) const;
++
++    /** @brief Variant the mode selected by SetMode needs. */
++    Variant ModeVariant() const { return m_variant; }
++
++    /** @brief Conversion gain (FDG_SEL). High lifts the gain floor to 3 dB. */
++    enum class ConversionGain { Low, High };
++
++    /** @brief Set before SIPL reads GetSensorAttributes: it moves the gain range. */
++    void SetConversionGain(ConversionGain conversionGain) { m_conversionGain = conversionGain; }
++    ConversionGain GetConversionGain() const { return m_conversionGain; }
++
++    // --- ICameraSensorControl Methods ---
++
++    bool SetSensorControls(uddf::cdi::IHardwareAccess& hwAccess,
++                           uddf::cdi::IDriverServices& driverServices,
++                           const SensorControls& controls) override;
++
++    // --- ICameraSensorInfo Methods ---
++
++    bool GetSensorAttributes(uddf::cdi::IDriverServices& driverServices,
++                             SensorAttributes& attributes) const override;
++
++    bool ParseTopEmbeddedData(uddf::cdi::IDriverServices& driverServices,
++                              const EmbeddedDataChunk& chunk,
++                              EmbeddedDataInfo& info) override;
++
++    bool ParseBottomEmbeddedData(uddf::cdi::IDriverServices& driverServices,
++                                 const EmbeddedDataChunk& chunk,
++                                 EmbeddedDataInfo& info) override;
++
++private:
++    bool SetGain(uddf::cdi::IHardwareAccess& hwAccess,
++                 uddf::cdi::IDriverServices& driverServices,
++                 const sensor_control::ExposureGainInfo& exposureGainControl);
++    bool SetExposure(uddf::cdi::IHardwareAccess& hwAccess,
++                     uddf::cdi::IDriverServices& driverServices,
++                     const sensor_control::ExposureGainInfo& exposureGainControl);
++
++    // VMAX of the active mode; set by SetMode, defaults to the full frame.
++    uint32_t m_hmax { 610U };
++    uint32_t m_vmax { 1689U };
++    uint32_t m_minShs { 51U };
++    Variant m_variant { Variant::Any };
++
++    // Derived from m_hmax; recomputed by SetMode.
++    float m_lineTimeNs { 0.0f };
++    float m_minExposure { 0.0f };
++
++    // Bayer phase of the active mode; set by SetMode with the timing.
++    sensor_control::PixelOrder m_cfa { sensor_control::PixelOrder::RGGB };
++
++    // Derived from m_vmax; recomputed by SetMode so the two cannot diverge.
++    float m_maxExposure { 0.0f };
++
++    bool m_charModeEnabled { false };
++
++    ConversionGain m_conversionGain { ConversionGain::Low };
++
++    /** @brief Lowest gain the sensor accepts in the current conversion gain. */
++    float GainMin() const;
++
++    mutable uint64_t m_artificialFrameCounter { 0 };
++};
++
++} // namespace uddf::samples
++
++#endif // UDDF_SAMPLES_IMX900SENSORDRIVER_HPP
+diff --git a/sipl/uddf/drivers/sensors/IMX900/fr_imx900_data.py b/sipl/uddf/drivers/sensors/IMX900/fr_imx900_data.py
+new file mode 100755
+index 0000000..0a78256
+--- /dev/null
++++ b/sipl/uddf/drivers/sensors/IMX900/fr_imx900_data.py
+@@ -0,0 +1,805 @@
++#! /usr/bin/env python3
++# SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++# SPDX-License-Identifier: Apache-2.0
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++IMX900_TABLE_WAIT_MS = "imx900-table-wait-ms"
++MX900_WAIT_MS = 0x01
++IMX900_WAIT_MS_START = 0x0F
++
++STANDBY =           0x3000
++XMSTA =             0x3010
++SYNCSEL =           0x343C
++FDG_SEL =           0x30B4
++
++# Gain register floor in HCG, 3 dB
++HCG_GAIN_REG_MIN = 30
++
++TRIGMODE =          0x3400
++
++TRIGMODE_VALUES = {
++    'normal':     0x00,
++    'sequential': 0x09,  # target only
++    'fast':       0x0A,  # controller only
++}
++
++VINT_EN_MODE_BITS = {
++    'normal':     0x02,  # what the mode tables write
++    'sequential': 0x01,
++    'fast':       0x00,
++}
++
++# Upper VINT_EN bits per readout; FRAMOS imx900_configure_shutter.
++VINT_EN_READOUT_ALL_PIXEL          = 0x1C
++VINT_EN_READOUT_BINNING            = 0x18
++VINT_EN_READOUT_SUBSAMPLING2_MONO  = 0x18
++VINT_EN_READOUT_SUBSAMPLING2_COLOR = 0x14
++
++HVMODE =                    0x303C
++LLBLANK_LOW =               0x323C
++LLBLANK_HIGH =              0x323D
++VINT_EN =                   0x323E
++VOPB_VBLK_HWID_LOW =        0x30D0
++VOPB_VBLK_HWID_HIGH =       0x30D1
++FINFO_HWIDTH_LOW =          0x30D2
++FINFO_HWIDTH_HIGH =         0x30D3
++
++VMAX_LOW =                  0x30D4
++VMAX_MID =                  0x30D5
++VMAX_HIGH =                 0x30D6
++HMAX_LOW =                  0x30D8
++HMAX_HIGH =                 0x30D9
++
++GMRWT =                     0x30E2
++GMTWT =                     0x30E3
++GAINDLY =                   0x30E5
++GSDLY =                     0x30E6
++REGHOLD =                   0x30F8
++
++ROI_MODE =                  0x3100
++FID0_ROI =                  0x3104
++FID0_ROIPH1_LOW =           0x3120
++FID0_ROIPH1_HIGH =          0x3121
++FID0_ROIPV1_LOW	 =          0x3122
++FID0_ROIPV1_HIGH =          0x3123
++FID0_ROIWH1_LOW =           0x3124
++FID0_ROIWH1_HIGH =          0x3125
++FID0_ROIWV1_LOW =           0x3126
++FID0_ROIWV1_HIGH =          0x3127
++
++
++GAIN_LOW =          0x3514
++GAIN_HIGH =         0x3515
++
++SHS_LOW =                   0x3240
++SHS_MID =                   0x3241
++SHS_HIGH =                  0x3242
++IMX900_36A8 =               0x36A8
++IMX900_36A9 =               0x36A9
++GMRWT2 =                    0x36E2
++GMRWT3 =                    0x36E3
++LANESEL =                   0x3904
++SCAL_INIT_EN =              0x3CA3
++CHROMACITY =                0x3817
++
++
++imx900_init_settings = [
++            #(0x3000, 0x01),
++            # STANDBY: enter
++            #delay(10000)
++
++            # ---- Global init: INCK / PLL settings (37.125 MHz) ----
++            (0x3014, 0x1E),
++            # INCKSEL_ST0
++            (0x3015, 0x92),
++            # INCKSEL_ST1
++            (0x3016, 0xE0),
++            # INCKSEL_ST2
++            (0x3017, 0x01),
++            # INCKSEL_ST3
++            (0x3018, 0xB6),
++            # INCKSEL_ST4
++            (0x3019, 0x00),
++            # INCKSEL_ST5
++            (0x301C, 0xB6),
++            # INCKSEL_ST6
++            (0x301D, 0x00),
++            # INCKSEL_ST7
++            (0x303A, 0x15),
++            # I2CSPICK
++            (0x3C98, 0x80),
++            # BASECK_FREQ_LOW
++            (0x3C99, 0x09),
++            # BASECK_FREQ_HIGH
++            (0x4100, 0x02),
++            # INCKSEL_N0
++            (0x4101, 0x07),
++            # INCKSEL_N1
++            (0x4110, 0x02),
++            # INCKSEL_D0
++
++            # INCKSEL_STB[0..28]
++            (0x505C, 0x96),
++            # INCKSEL_STB0
++            (0x505D, 0x02),
++            # INCKSEL_STB1
++            (0x505E, 0x96),
++            # INCKSEL_STB2
++            (0x505F, 0x02),
++            # INCKSEL_STB3
++            (0x54D0, 0x40),
++            # INCKSEL_STB4
++            (0x54D1, 0x01),
++            # INCKSEL_STB5
++            (0x54D2, 0x81),
++            # INCKSEL_STB6
++            (0x54D3, 0x01),
++            # INCKSEL_STB7
++            (0x54D4, 0x15),
++            # INCKSEL_STB8
++            (0x54D5, 0x01),
++            # INCKSEL_STB9
++            (0x54D6, 0x00),
++            # INCKSEL_STB10
++            (0x5934, 0x96),
++            # INCKSEL_STB11
++            (0x5935, 0x02),
++            # INCKSEL_STB12
++            (0x5936, 0x96),
++            # INCKSEL_STB13
++            (0x5937, 0x02),
++            # INCKSEL_STB14
++            (0x59AC, 0x00),
++            # INCKSEL_STB15
++            (0x59AE, 0x56),
++            # INCKSEL_STB16
++            (0x59AF, 0x01),
++            # INCKSEL_STB17
++            (0x5BB8, 0x5C),
++            # INCKSEL_STB18
++            (0x5BBA, 0x3A),
++            # INCKSEL_STB19
++            (0x5BBC, 0xC5),
++            # INCKSEL_STB20
++            (0x5BBD, 0x00),
++            # INCKSEL_STB21
++            (0x5BBE, 0x0B),
++            # INCKSEL_STB22
++            (0x5BBF, 0x02),
++            # INCKSEL_STB23
++            (0x5BC0, 0x74),
++            # INCKSEL_STB24
++            (0x5BC1, 0x02),
++            # INCKSEL_STB25
++            (0x5BC2, 0x90),
++            # INCKSEL_STB26
++            (0x5BC3, 0x01),
++            # INCKSEL_STB27
++            (0x5BCC, 0x00),
++            # INCKSEL_STB28
++
++            # Global MIPI timing
++            (0x3CB8, 0x0F),
++            # TCLK_PRE_LOW
++            (0x3CB9, 0x00),
++            # TCLK_PRE_HIGH
++            # (LANESEL,0x02),
++
++            # Misc global init
++            (0x3942, 0x03),
++            # EAV_SEL_MIPI
++            (0x3502, 0x09),
++            # GAIN_RTS
++
++            # Undocumented internal registers
++            (0x32B6, 0x3A),
++            (0x3312, 0x39),
++            (0x34D4, 0x78),
++            (0x34D5, 0x27),
++            (0x34D8, 0xA9),
++            (0x34D9, 0x5A),
++            (0x34F9, 0x12),
++            (0x3528, 0x00),
++            (0x352A, 0x00),
++            (0x352C, 0x00),
++            (0x352E, 0x00),
++            (0x3542, 0x03),
++            (0x3549, 0x2A),
++            (0x354A, 0x20),
++            (0x354B, 0x0C),
++            (0x359C, 0x19),
++            (0x359E, 0x3F),
++            (0x35EA, 0xF0),
++            (0x35F4, 0x03),
++            (0x35F8, 0x01),
++            (0x3600, 0x00),
++            (0x3614, 0x00),
++            (0x362A, 0xEC),
++            (0x362B, 0x1F),
++            (0x362E, 0xF8),
++            (0x362F, 0x1F),
++            (0x3630, 0x5C),
++            (0x3648, 0xC6),
++            (0x364A, 0xEC),
++            (0x364B, 0x1F),
++            (0x364C, 0xDE),
++            (0x364E, 0xF8),
++            (0x364F, 0x1F),
++            (0x3652, 0xEC),
++            (0x3653, 0x1F),
++            (0x3656, 0xF8),
++            (0x3657, 0x1F),
++            (0x3658, 0x5C),
++            (0x3670, 0xC6),
++            (0x3672, 0xEC),
++            (0x3673, 0x1F),
++            (0x3674, 0xDE),
++            (0x3676, 0xF8),
++            (0x3677, 0x1F),
++            (0x367A, 0xEC),
++            (0x367B, 0x1F),
++            (0x367E, 0xF8),
++            (0x367F, 0x1F),
++            (0x3698, 0xC6),
++            (0x369A, 0xEC),
++            (0x369B, 0x1F),
++            (0x369C, 0xDE),
++            (0x369E, 0xF8),
++            (0x369F, 0x1F),
++            (0x36B0, 0x28),
++            (0x36B1, 0x00),
++            (0x36B2, 0xF8),
++            (0x36B3, 0x1F),
++            (0x36BC, 0x28),
++            (0x36BD, 0x00),
++            (0x36BE, 0xF8),
++            (0x36BF, 0x1F),
++            (0x36D4, 0xEF),
++            (0x36D5, 0x01),
++            (0x36D6, 0x94),
++            (0x36D7, 0x03),
++            (0x36D8, 0xEF),
++            (0x36D9, 0x01),
++            (0x36DA, 0x94),
++            (0x36DB, 0x03),
++            (0x36DC, 0x9B),
++            (0x36DD, 0x09),
++            (0x36DE, 0x57),
++            (0x36DF, 0x11),
++            (0x36E0, 0xEB),
++            (0x36E1, 0x17),
++            (0x37AC, 0x0E),
++            (0x37AE, 0x14),
++            (0x38E8, 0x82),
++            (0x5032, 0xFF),
++            (0x5038, 0x00),
++            (0x5039, 0x00),
++            (0x503A, 0xF6),
++            (0x5078, 0x09),
++            (0x507B, 0x11),
++            (0x507C, 0xFF),
++            (0x531C, 0x48),
++            (0x531E, 0x52),
++            (0x5320, 0x48),
++            (0x5322, 0x52),
++            (0x5324, 0x48),
++            (0x5326, 0x52),
++            (0x5328, 0x48),
++            (0x532A, 0x52),
++            (0x532C, 0x48),
++            (0x532E, 0x52),
++            (0x5330, 0x48),
++            (0x5332, 0x52),
++            (0x5334, 0x48),
++            (0x5336, 0x52),
++            (0x5338, 0x48),
++            (0x533A, 0x52),
++            (0x54D6, 0x00),
++            (0x5545, 0xA7),
++            (0x5546, 0x14),
++            (0x5547, 0x14),
++            (0x5548, 0x14),
++            (0x5550, 0x0A),
++            (0x5551, 0x0A),
++            (0x5552, 0x0A),
++            (0x5553, 0x6A),
++            (0x5589, 0x0E),
++            (0x5704, 0x0E),
++            (0x5705, 0x14),
++            (0x5832, 0x54),
++            (0x5836, 0x54),
++            (0x583A, 0x54),
++            (0x583E, 0x54),
++            (0x5842, 0x54),
++            (0x5846, 0x54),
++            (0x584A, 0x54),
++            (0x584E, 0x54),
++            (0x5852, 0x54),
++            (0x5856, 0x54),
++            (0x585A, 0x54),
++            (0x585E, 0x54),
++            (0x5862, 0x54),
++            (0x5866, 0x54),
++            (0x586A, 0x54),
++            (0x586E, 0x54),
++            (0x5872, 0x54),
++            (0x5876, 0x54),
++            (0x587A, 0x54),
++            (0x587E, 0x54),
++            (0x5882, 0x54),
++            (0x5886, 0x54),
++            (0x588A, 0x54),
++            (0x588E, 0x54),
++            (0x5902, 0xB0),
++            (0x5903, 0x04),
++            (0x590A, 0xB0),
++            (0x590B, 0x04),
++            (0x590C, 0xB0),
++            (0x590D, 0x09),
++            (0x590E, 0xC4),
++            (0x590F, 0x09),
++            (0x5939, 0x08),
++            (0x59AC, 0x00),
++            (0x59C1, 0x00),
++            (0x59D4, 0x00),
++            (0x5B4D, 0x24),
++            (0x5B81, 0x36),
++            (0x5BB5, 0x09),
++            (0x5BC9, 0x11),
++            (0x5BCC, 0x00),
++            (0x5BD8, 0x00),
++            (0x5BD9, 0x00),
++            (0x5BDC, 0x1D),
++            (0x5BDD, 0x00),
++            (0x5BE0, 0x1E),
++            (0x5BE1, 0x00),
++            (0x5BE4, 0x3B),
++            (0x5BE5, 0x00),
++            (0x5BE8, 0x3C),
++            (0x5BE9, 0x00),
++            (0x5BEC, 0x59),
++            (0x5BED, 0x00),
++            (0x5BF0, 0x5A),
++            (0x5BF1, 0x00),
++            (0x5BF4, 0x77),
++            (0x5BF5, 0x00),
++            (0x5C00, 0x00),
++            (0x5E04, 0x13),
++            (0x5E05, 0x05),
++            (0x5E06, 0x02),
++            (0x5E07, 0x00),
++            (0x5E14, 0x14),
++            (0x5E15, 0x05),
++            (0x5E16, 0x01),
++            (0x5E17, 0x00),
++            (0x5E34, 0x08),
++            (0x5E35, 0x05),
++            (0x5E36, 0x02),
++            (0x5E37, 0x00),
++            (0x5E44, 0x09),
++            (0x5E45, 0x05),
++            (0x5E46, 0x01),
++            (0x5E47, 0x00),
++            (0x5E98, 0x7C),
++            (0x5E99, 0x09),
++            (0x5EB8, 0x7E),
++            (0x5EB9, 0x09),
++            (0x5EC8, 0x18),
++            (0x5EC9, 0x09),
++            (0x5ECA, 0xE8),
++            (0x5ECB, 0x03),
++            (0x5ED8, 0x1A),
++            (0x5ED9, 0x09),
++            (0x5EDA, 0xE6),
++            (0x5EDB, 0x03),
++            (0x5F08, 0x18),
++            (0x5F09, 0x09),
++            (0x5F0A, 0xE8),
++            (0x5F0B, 0x03),
++            (0x5F18, 0x1A),
++            (0x5F19, 0x09),
++            (0x5F1A, 0xE6),
++            (0x5F1B, 0x03),
++            (0x5F38, 0x18),
++            (0x5F39, 0x09),
++            (0x5F3A, 0xE8),
++            (0x5F3B, 0x03),
++            (0x5F48, 0x1A),
++            (0x5F49, 0x09),
++            (0x5F4A, 0xE6),
++            (0x5F4B, 0x03),
++            (0x5F68, 0x18),
++            (0x5F69, 0x09),
++            (0x5F6A, 0xE8),
++            (0x5F6B, 0x03),
++            (0x5F78, 0x1A),
++            (0x5F79, 0x09),
++            (0x5F7A, 0xE6),
++            (0x5F7B, 0x03),
++            (0x60B4, 0x1E),
++            (0x60C0, 0x1F),
++            (0x6178, 0x7C),
++            (0x6179, 0x09),
++            (0x6198, 0x7E),
++            (0x6199, 0x09),
++            (0x6278, 0x18),
++            (0x6279, 0x09),
++            (0x627A, 0xE8),
++            (0x627B, 0x03),
++            (0x6288, 0x1A),
++            (0x6289, 0x09),
++            (0x628A, 0xE6),
++            (0x628B, 0x03),
++            (0x62A8, 0x18),
++            (0x62A9, 0x09),
++            (0x62AA, 0xE8),
++            (0x62AB, 0x03),
++            (0x62B8, 0x1A),
++            (0x62B9, 0x09),
++            (0x62BA, 0xE6),
++            (0x62BB, 0x03),
++            (0x62D8, 0x18),
++            (0x62D9, 0x09),
++            (0x62DA, 0xE8),
++            (0x62DB, 0x03),
++            (0x62E8, 0x1A),
++            (0x62E9, 0x09),
++            (0x62EA, 0xE6),
++            (0x62EB, 0x03),
++            (0x6318, 0x18),
++            (0x6319, 0x09),
++            (0x631A, 0xE8),
++            (0x631B, 0x03),
++            (0x6328, 0x1A),
++            (0x6329, 0x09),
++            (0x632A, 0xE6),
++            (0x632B, 0x03),
++            (0x6398, 0x1E),
++            (0x63A4, 0x1F),
++            (0x6501, 0x01),
++            (0x6505, 0x00),
++            (0x6508, 0x00),
++            (0x650C, 0x01),
++            (0x6510, 0x00),
++            (0x6514, 0x01),
++            (0x6519, 0x01),
++            (0x651D, 0x00),
++            (0x6528, 0x00),
++            (0x652C, 0x01),
++            (0x6531, 0x01),
++            (0x6535, 0x00),
++            (0x6538, 0x00),
++            (0x653C, 0x01),
++            (0x6541, 0x01),
++            (0x6545, 0x00),
++            (0x6549, 0x01),
++            (0x654D, 0x00),
++            (0x6558, 0x00),
++            (0x655C, 0x01),
++            (0x6560, 0x00),
++            (0x6564, 0x01),
++            (0x6571, 0x01),
++            (0x6575, 0x00),
++            (0x6579, 0x01),
++            (0x657D, 0x00),
++            (0x6588, 0x00),
++            (0x658C, 0x01),
++            (0x6590, 0x00),
++            (0x6594, 0x01),
++            (0x6598, 0x00),
++            (0x659C, 0x01),
++            (0x65A0, 0x00),
++            (0x65A4, 0x01),
++            (0x65B0, 0x00),
++            (0x65B4, 0x01),
++            (0x65B9, 0x00),
++            (0x65BD, 0x00),
++            (0x65C1, 0x00),
++            (0x65C9, 0x00),
++            (0x65CC, 0x00),
++            (0x65D0, 0x00),
++            (0x65D4, 0x00),
++            (0x65DC, 0x00),
++            # #delay(10000)
++
++    #(IMX900_TABLE_WAIT_MS, IMX900_WAIT_MS),
++]
++# ---------------------------------------------------------------------------
++# Mode construction
++#
++# A mode is (data rate) x (bit depth) x (readout variant) x (geometry). Each of
++# the first three is a dict of just the registers that differ, all taken from
++# the FRAMOS fr_imx900_mode_tbls.h tables, so a new combination is one call to
++# _mode() rather than a copied register list.
++# ---------------------------------------------------------------------------
++
++# D-PHY timing + PLL, from the imx900_<rate>_mbps tables.
++PHY_891 = {
++    "scal_init_en": 0x00,
++    "ths_prepare":  0x003F, "tclk_post":    0x007F,
++    "ths_trail":    0x003F, "ths_zero":     0x007F,
++    "tclk_prepare": 0x003F, "tclk_trail":   0x003F,
++    "tlpx":         0x003F, "tclk_zero":    0x010F,
++    "ths_exit":     0x006F,
++    "incksel":      (0x0C, 0x0D, 0xC8),
++}
++
++# Readout timing, which is rate-dependent and must move with the PHY block.
++# Leaving these stale while changing the rate makes the sensor emit constant
++# black-level pixels at a perfectly clean frame rate.
++READOUT_891 = {
++    "gmrwt": 0x11, "gmtwt": 0x27, "gaindly": 0x02, "gsdly": 0x01,
++    "reg_36a8": 0x11, "reg_36a9": 0x1D, "gmrwt2": 0x0C, "gmrwt3": 0x17,
++}
++
++# Readout timing for the mono 1/2-subsampling and 2x2-average readouts;
++# FRAMOS picks it by chromacity (subsampling2_binning_MONO_891MBPS_1x12_4LANE).
++READOUT_891_MONO_SUB = {
++    "gmrwt": 0x20, "gmtwt": 0x48, "gaindly": 0x02, "gsdly": 0x02,
++    "reg_36a8": 0x20, "reg_36a9": 0x36, "gmrwt2": 0x16, "gmrwt3": 0x2C,
++}
++
++DEPTH_12BIT = {
++    "black_level": 240,
++    "adbit_monosel": 0x11, "odbit": 0x01,
++    "reg_5572": 0x1F, "reg_5613": 0x8F,
++}
++
++DEPTH_12BIT_MONO = {
++    "black_level": 240,
++    "adbit_monosel": 0x15, "odbit": 0x01,
++    "reg_5572": 0x1F, "reg_5613": 0x8F,
++}
++
++ROI = {
++    # Trailing constant of the FRAMOS min-frame-length formula.
++    "vmax_blanking": 56,
++    "hvmode":        0x00,
++    "roi_enable":    0x03,
++    "llblank":       0x000F,
++    "vint_en":       VINT_EN_READOUT_ALL_PIXEL | VINT_EN_MODE_BITS["normal"],
++    "reg_3521":      0x1A,
++    "reg_3546":      0x06,
++}
++
++BINNING2X2_MONO = {
++    # FRAMOS mode_1024x720[] + mode_subsampling2_binning_mono[]. 2x2 average
++    # destroys the Bayer phase, so FRAMOS exposes it as mono only.
++    "vmax_blanking": 38,
++    "hvmode":        0x10,
++    "roi_enable":    0x03,
++    "llblank":       0x000D,
++    "vint_en":       VINT_EN_READOUT_BINNING | VINT_EN_MODE_BITS["normal"],
++    "reg_3521":      0x0E,
++    "reg_3546":      0x03,
++}
++
++SUBSAMPLING2_MONO = {
++    # FRAMOS mode_subsampling2_binning_mono[]; shared with the 2x2 average.
++    "vmax_blanking": 38,
++    "hvmode":        0x08,
++    "roi_enable":    0x00,
++    "llblank":       0x000D,
++    "vint_en":       VINT_EN_READOUT_SUBSAMPLING2_MONO | VINT_EN_MODE_BITS["normal"],
++    "reg_3521":      0x0E,
++    "reg_3546":      0x03,
++}
++
++SUBSAMPLING2_COLOR = {
++    #  1032x776 mode
++    "vmax_blanking": 34,
++    "hvmode":        0x08,
++    "roi_enable":    0x00,
++    "llblank":       0x000B,
++    "vint_en":       VINT_EN_READOUT_SUBSAMPLING2_COLOR | VINT_EN_MODE_BITS["normal"],
++    "reg_3521":      0x0E,
++    "reg_3546":      0x03,
++}
++
++
++def _low_byte(value):
++    """Low 8 bits of a value, for the *_LOW half of a register pair."""
++    return value & 0xFF
++
++
++def _mid_byte(value):
++    """Bits 15:8, for the *_HIGH half. Mirrors IMX900_TO_MID_BYTE in the
++    FRAMOS fr_imx900_mode_tbls.h."""
++    return (value >> 8) & 0xFF
++
++
++def _mode(hmax, vmax, width, height, roi_x, roi_y,
++          phy=None, depth=None, variant=ROI, readout=None,
++          roi_w=None, roi_h=None, finfo_hwidth=None, vopb_hwid=None):
++    """Build a mode register list.
++
++    hmax/vmax set the frame timing; width/height/roi_* select the readout
++    window. phy, depth, variant and readout each contribute only the registers
++    that distinguish them. roi_w/roi_h default to the output size and exist so
++    a crop can be expressed in a different coordinate space if needed.
++    """
++    if phy is None:
++        phy = PHY_891
++    if depth is None:
++        depth = DEPTH_12BIT
++    if readout is None:
++        readout = READOUT_891
++    if roi_w is None:
++        roi_w = width
++    if roi_h is None:
++        roi_h = height
++    # FINFO_HWIDTH sets the frame-info (embedded) line width and VOPB_VBLK_HWID
++    # the optical-black width; both default to the image width.
++    if finfo_hwidth is None:
++        finfo_hwidth = width
++    if vopb_hwid is None:
++        vopb_hwid = width
++
++    d1, d2, d3 = phy["incksel"]
++    return [
++    # ---- Frame timing and lane count ----
++    (HMAX_LOW,      _low_byte(hmax)),
++    (HMAX_HIGH,     _mid_byte(hmax)),
++
++    (LANESEL,       0x02),  # 4 lanes
++
++    (VMAX_LOW,      _low_byte(vmax)),
++    (VMAX_MID,      _mid_byte(vmax)),
++    (VMAX_HIGH,     0x00),
++
++    (SHS_LOW,      0x6a),
++    (SHS_MID,      0x02),
++    (SHS_HIGH,     0x00),
++    (GAIN_LOW,     0x10),
++    (GAIN_HIGH,    0x00),  # gain reg = 0x0010 = 16 -> 1.6 dB (1.20x)
++
++    # ---- ADC / output bit depth (colour sensor) ----
++    (0x3200, depth["adbit_monosel"]),  # ADBIT_MONOSEL
++    (0x3430, depth["odbit"]),          # ODBIT
++    (0x5572, depth["reg_5572"]),       # internal trim
++    (0x5613, depth["reg_5613"]),       # internal trim
++
++    # ---- Readout-variant settings (all-pixel vs 1/2 subsampling) ----
++    (LLBLANK_LOW,   _low_byte(variant["llblank"])),
++    (LLBLANK_HIGH,  _mid_byte(variant["llblank"])),
++    (0x3521,        variant["reg_3521"]),
++    (0x3546,        variant["reg_3546"]),
++
++    (HVMODE,                variant["hvmode"]),
++    (VOPB_VBLK_HWID_LOW,    _low_byte(vopb_hwid)),
++    (VOPB_VBLK_HWID_HIGH,   _mid_byte(vopb_hwid)),
++    (FINFO_HWIDTH_LOW,      _low_byte(finfo_hwidth)),
++    (FINFO_HWIDTH_HIGH,     _mid_byte(finfo_hwidth)),
++    (FID0_ROI,              variant["roi_enable"]),
++
++    (FID0_ROIPH1_LOW,       _low_byte(roi_x)),
++    (FID0_ROIPH1_HIGH,      _mid_byte(roi_x)),
++    (FID0_ROIPV1_LOW,       _low_byte(roi_y)),
++    (FID0_ROIPV1_HIGH,      _mid_byte(roi_y)),
++
++    (FID0_ROIWH1_LOW,       _low_byte(roi_w)),
++    (FID0_ROIWH1_HIGH,      _mid_byte(roi_w)),
++
++    (FID0_ROIWV1_LOW,       _low_byte(roi_h)),
++    (FID0_ROIWV1_HIGH,      _mid_byte(roi_h)),
++
++    # ---- MIPI D-PHY timing + PLL ----
++    (SCAL_INIT_EN,  phy["scal_init_en"]),
++    (0x3CA8, _low_byte(phy["ths_prepare"])),   # THS_PREPARE_LOW
++    (0x3CA9, _mid_byte(phy["ths_prepare"])),
++    (0x3CAA, _low_byte(phy["tclk_post"])),     # TCLK_POST_LOW
++    (0x3CAB, _mid_byte(phy["tclk_post"])),
++    (0x3CAC, _low_byte(phy["ths_trail"])),     # THS_TRAIL_LOW
++    (0x3CAD, _mid_byte(phy["ths_trail"])),
++    (0x3CAE, _low_byte(phy["ths_zero"])),      # THS_ZERO_LOW
++    (0x3CAF, _mid_byte(phy["ths_zero"])),
++    (0x3CB0, _low_byte(phy["tclk_prepare"])),  # TCLK_PREPARE_LOW
++    (0x3CB1, _mid_byte(phy["tclk_prepare"])),
++    (0x3CB2, _low_byte(phy["tclk_trail"])),    # TCLK_TRAIL_LOW
++    (0x3CB3, _mid_byte(phy["tclk_trail"])),
++    (0x3CB4, _low_byte(phy["tlpx"])),          # TLPX_LOW
++    (0x3CB5, _mid_byte(phy["tlpx"])),
++    (0x3CB6, _low_byte(phy["tclk_zero"])),     # TCLK_ZERO_LOW
++    (0x3CB7, _mid_byte(phy["tclk_zero"])),
++    (0x3CBA, _low_byte(phy["ths_exit"])),      # THS_EXIT_LOW
++    (0x3CBB, _mid_byte(phy["ths_exit"])),
++    (0x4111, d1),  # INCKSEL_D1
++    (0x4112, d2),  # INCKSEL_D2
++    (0x4116, d3),  # INCKSEL_D3
++
++    # ---- Rate-dependent readout timing ----
++    (GMRWT,         readout["gmrwt"]),
++    (GMTWT,         readout["gmtwt"]),
++    (GAINDLY,       readout["gaindly"]),
++    (GSDLY,         readout["gsdly"]),
++    (IMX900_36A8,   readout["reg_36a8"]),
++    (IMX900_36A9,   readout["reg_36a9"]),
++    (GMRWT2,        readout["gmrwt2"]),
++    (GMRWT3,        readout["gmrwt3"]),
++
++    # ---- Trigger / sync: controller mode, normal exposure ----
++    (TRIGMODE, 0x00),  # no external trigger (free-run); seq_trigger overrides
++    (SYNCSEL, 0xC0),  # controller mode (XVS/XHS output); seq_target_mode overrides
++    (VINT_EN, variant["vint_en"]),  # normal exposure, per readout variant
++
++    # ---- Black level, per bit depth (FRAMOS IMX900_DEFAULT_BLACK_LEVEL_*BPP) ----
++    (0x35B4, _low_byte(depth["black_level"])),
++    (0x35B5, _mid_byte(depth["black_level"])),
++
++     # No test pattern
++    (0x3550, 0x06),
++    ]
++
++
++# ---------------------------------------------------------------------------
++# Mode instances
++#
++# HMAX from imx900_adjust_hmax_register() in FRAMOS fr_imx900.c; VMAX sets
++# the frame rate.
++# ---------------------------------------------------------------------------
++
++# --- 891 Mbps, 12-bit ---
++# Exported to C++ via ph_define_constant in fr_imx900_hsl.py, so the driver
++# and the register table cannot drift apart.
++SENSOR_INCK_HZ    = 74250000   # IMX900_INCK in FRAMOS fr_imx900.c
++HMAX_891_12B      = 610        # 0x0262
++# Mono subsampling and 2x2 average use a shorter line (fr_imx900.c 0x147).
++HMAX_891_12B_MONO_SUB = 327    # 0x0147
++
++
++def min_vmax(height, variant, readout):
++    return (height + readout["gmrwt"] + 2 * readout["gmrwt2"]
++            + readout["gmtwt"] + readout["gsdly"] + variant["vmax_blanking"])
++
++
++# VMAX at the readout floor, so each mode runs at the highest rate it allows.
++VMAX_ROI2048_891  = min_vmax(1552, ROI, READOUT_891)   # 1689 -> 72.1 fps
++VMAX_ROI1080_891  = min_vmax(1080, ROI, READOUT_891)   # 1217 -> 100.0 fps
++VMAX_SUB2_891     = min_vmax(776, SUBSAMPLING2_COLOR, READOUT_891)  # 891 -> 136.6 fps
++
++VMAX_SUB2_MONO_891 = 1419   # 0x58B -> 160.0 fps
++VMAX_BIN2X2_MONO_891 = 1419   # 0x58B -> 160.0 fps
++
++MIN_SHS_891 = READOUT_891["gmtwt"] + READOUT_891["gmrwt2"]
++MIN_SHS_891_MONO_SUB = READOUT_891_MONO_SUB["gmtwt"] + READOUT_891_MONO_SUB["gmrwt2"]
++
++imx900_mode_2064x1552_12BPP = _mode(
++    HMAX_891_12B, VMAX_ROI2048_891, 2048, 1552, 8, 0,
++    PHY_891, DEPTH_12BIT, ROI, READOUT_891)
++
++# 1920x1080 and 1032x776 will be available in a future release.
++# imx900_mode_1920x1080_12BPP = _mode(
++#     HMAX_891_12B, VMAX_ROI1080_891, 1920, 1080, 72, 240,
++#     PHY_891, DEPTH_12BIT, ROI, READOUT_891)
++
++# imx900_mode_1032x776_12BPP = _mode(
++#     HMAX_891_12B, VMAX_SUB2_891, 1032, 776, 0, 0,
++#     PHY_891, DEPTH_12BIT, SUBSAMPLING2_COLOR, READOUT_891)
++
++imx900_mode_2048x1552_12BPP_MONO = _mode(
++    HMAX_891_12B, VMAX_ROI2048_891, 2048, 1552, 8, 0,
++    PHY_891, DEPTH_12BIT_MONO, ROI, READOUT_891)
++
++# 1920x1080 and 1032x776 will be available in a future release.
++# imx900_mode_1920x1080_12BPP_MONO = _mode(
++#     HMAX_891_12B, VMAX_ROI1080_891, 1920, 1080, 72, 240,
++#     PHY_891, DEPTH_12BIT_MONO, ROI, READOUT_891)
++
++# imx900_mode_1032x776_12BPP_MONO = _mode(
++#     HMAX_891_12B_MONO_SUB, VMAX_SUB2_MONO_891, 1032, 776, 0, 0,
++#     PHY_891, DEPTH_12BIT_MONO, SUBSAMPLING2_MONO, READOUT_891_MONO_SUB)
++
++imx900_mode_1024x720_12BPP_MONO = _mode(
++    HMAX_891_12B_MONO_SUB, VMAX_BIN2X2_MONO_891, 1024, 720, 8, 32,
++    PHY_891, DEPTH_12BIT_MONO, BINNING2X2_MONO, READOUT_891_MONO_SUB)
+diff --git a/sipl/uddf/drivers/sensors/IMX900/fr_imx900_hsl.py b/sipl/uddf/drivers/sensors/IMX900/fr_imx900_hsl.py
+new file mode 100755
+index 0000000..1f03151
+--- /dev/null
++++ b/sipl/uddf/drivers/sensors/IMX900/fr_imx900_hsl.py
+@@ -0,0 +1,258 @@
++#! /usr/bin/env python3
++# SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++# SPDX-License-Identifier: Apache-2.0
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++# IMX900 HSL sequences for the CoE / Holoscan Sensor Bridge path.
++
++from pyhsl import *
++from fr_imx900_data import *
++
++from enum import Enum
++# set up logging
++Configuration.set_default_logger('DEBUG')
++
++if __name__ == '__main__':
++    Configuration.set_values({}, None, ph_logger())
++
++
++# Camera I2C address - exported as C++ constant.
++ph_define_constant('CAM_I2C_ADDRESS', 0x1a)
++ph_define_constant('I2C_EXPANDER_I2C_ADDRESS', 0x70)
++ph_define_constant('GPIO_EXPANDER_I2C_ADDRESS', 0x20)
++
++# Frame timing of the programmed mode, so IMX900SensorDriver.cpp reads the
++# same numbers the register table is built from.
++ph_define_constant('INCK_HZ', SENSOR_INCK_HZ)
++ph_define_constant('HMAX',    HMAX_891_12B)
++ph_define_constant('HMAX_MONO_SUB', HMAX_891_12B_MONO_SUB)
++ph_define_constant('VMAX_2048X1552', VMAX_ROI2048_891)
++ph_define_constant('VMAX_1920X1080', VMAX_ROI1080_891)
++ph_define_constant('VMAX_1032X776',  VMAX_SUB2_891)
++ph_define_constant('VMAX_1032X776_MONO', VMAX_SUB2_MONO_891)
++ph_define_constant('VMAX_1024X720_MONO', VMAX_BIN2X2_MONO_891)
++ph_define_constant('MIN_SHS', MIN_SHS_891)
++ph_define_constant('MIN_SHS_MONO_SUB', MIN_SHS_891_MONO_SUB)
++ph_define_constant('GAIN_REG_MIN_HCG', HCG_GAIN_REG_MIN)
++
++def write_buffer(dev, offset, data):
++    chunk_size = 120
++    with dev:
++        for i in range(0, len(data), chunk_size):
++            chunk = data[i:i+chunk_size]
++            write(offset+i, chunk)
++
++# Setup the devices
++ph_logger().info('FRAMOS: Setting up IMX900 devices')
++fr_imx900 = I2CDevice(CAM_I2C_ADDRESS, 16, 8, 'FrImx900')
++i2c_expander = I2CDevice(I2C_EXPANDER_I2C_ADDRESS, 8, 8, 'i2c_expander')
++gpio_expander = I2CDevice(GPIO_EXPANDER_I2C_ADDRESS, 8, 8, 'gpio_expander')
++
++gain_layout = MemoryLayout('gain_register')
++gain_layout.addItem('gain', 2)
++gain_block = MemoryBlock(gain_layout, 'gain_block')
++
++exposure_layout = MemoryLayout('exposure_register')
++exposure_layout.addItem('exposure', 3)
++exposure_block = MemoryBlock(exposure_layout, 'exposure_block')
++
++vmax_layout = MemoryLayout('vmax_register')
++vmax_layout.addItem('vmax', 3)
++vmax_block = MemoryBlock(vmax_layout, 'vmax_block')
++
++def seq_bringup():
++    """Power the sensor with the GPIO enable pulse."""
++    ph_logger().info('FRAMOS: Entering IMX900 bringup sequence')
++    with Sequence('bringup') as seq:
++        annotate('bringup')
++
++
++        # The 0x20 expander drives the camera control lines
++        with gpio_expander:
++            CONFIGURATION_REGISTER  = 0x03
++            OUTPUT_PORT_REGISTER    = 0x01
++
++            write(CONFIGURATION_REGISTER, 0x00) # all expander pins are outputs
++            write(OUTPUT_PORT_REGISTER, 0x00)   # drive them all low
++            delay(1000)
++
++            write(OUTPUT_PORT_REGISTER, 0x04)   # release the enable high
++            # Sensor recovery after the pulse, plus IMX900 boot settle before
++            # the first sensor write. See note above.
++            delay(60000)
++
++
++def seq_init_settings():
++    """Mode-independent init settings, written once the chromacity is known."""
++    ph_logger().info('FRAMOS: Entering IMX900 init_settings sequence')
++    with Sequence('init_settings') as seq:
++        annotate('init_settings')
++        with fr_imx900:
++            write(STANDBY, 0x01)
++            seq.delay(20)
++            for addr, val in imx900_init_settings:
++                write(addr, val)
++            seq.delay(30)
++
++
++def seq_standby(name, value):
++    """Enter or leave standby. Used around the chromacity read"""
++    ph_logger().info('FRAMOS: Entering IMX900 %s sequence' % name)
++    with Sequence(name) as seq:
++        annotate(name)
++        with fr_imx900:
++            write(STANDBY, value)
++            seq.delay(20)
++
++
++def seq_mode(name, mode_table):
++    """Program one mode table. Written in standby, as FRAMOS does."""
++    ph_logger().info('FRAMOS: Entering IMX900 %s sequence' % name)
++    with Sequence(name) as seq:
++        annotate(name)
++        with fr_imx900:
++            write(STANDBY, 0x01)
++            seq.delay(20)
++            for addr, val in mode_table:
++                write(addr, val)
++            seq.delay(30)
++
++
++def seq_start():
++    with Sequence('start'):
++        annotate('start')
++        with fr_imx900:
++            write(STANDBY, 0x00)  # Exit standby
++            delay(30)
++            write(XMSTA, 0x00)    # Start internal sync (controller)
++            delay(300)
++
++def seq_target_mode():
++    """Retarget XVS/XHS as inputs; applied after the mode table (controller)."""
++    with Sequence('target_mode'):
++        annotate('target_mode')
++        # Expander P3 (the XMASTER pin) flips the adapter's XVS/XHS buffers to input.
++        # P2 (power enable) stays high: 0x00 would cut the module.
++        with gpio_expander:
++            write(0x01, 0x0C)
++            delay(1000)
++        with fr_imx900:
++            write(SYNCSEL, 0xF0)  # XVS/XHS Hi-Z (inputs)
++            delay(30)
++
++def seq_start_target():
++    """Leave standby but keep XMSTA stopped: frames follow the controller's XVS."""
++    with Sequence('start_target'):
++        annotate('start_target')
++        with fr_imx900:
++            write(STANDBY, 0x00)  # Exit standby
++            delay(30)
++            write(XMSTA, 0x01)    # Internal sync stays stopped
++            delay(300)
++
++def seq_stop():
++    with Sequence('stop'):
++        annotate('stop')
++        with fr_imx900:
++            write(XMSTA, 0x01)    # Stop internal sync
++            delay(30)
++            write(STANDBY, 0x01)  # Enter standby
++            delay(30)
++
++def seq_reghold(name, value):
++    """Open or close the REGHOLD bracket."""
++    with Sequence(name) as seq:
++        annotate(name)
++        with fr_imx900:
++            write(REGHOLD, value)
++
++
++def seq_conversion_gain(name, fdg_sel):
++    """FDG_SEL after the mode table. HCG also lifts the table's 1.6 dB start
++    gain to its 3 dB floor, which SetGain enforces from then on."""
++    with Sequence(name):
++        annotate(name)
++        with fr_imx900:
++            write(FDG_SEL, fdg_sel)
++            if fdg_sel:
++                write(GAIN_LOW, HCG_GAIN_REG_MIN)
++                write(GAIN_HIGH, 0x00)
++
++def seq_trigger(name, readout_bits, trigger):
++    """TRIGMODE and VINT_EN for a trigger mode, after the mode table."""
++    with Sequence(name):
++        annotate(name)
++        with fr_imx900:
++            write(TRIGMODE, TRIGMODE_VALUES[trigger])
++            write(VINT_EN, readout_bits | VINT_EN_MODE_BITS[trigger])
++
++def seq_set_gain():
++    with Sequence('set_gain'):
++        annotate('set_gain')
++        with fr_imx900:
++            writeFromMemory(GAIN_LOW, gain_block.gain)
++
++
++def seq_set_exposure():
++    with Sequence('set_exposure'):
++        annotate('set_exposure')
++        with fr_imx900:
++            writeFromMemory(SHS_LOW, exposure_block.exposure)
++
++def seq_set_vmax():
++    """Frame length from the configured fps; after the mode table, which
++    programs the mode's floor."""
++    with Sequence('set_vmax'):
++        annotate('set_vmax')
++        with fr_imx900:
++            writeFromMemory(VMAX_LOW, vmax_block.vmax)
++
++# start the main dump
++def main():
++    ph_logger().info('FRAMOS: Entering IMX900 main sequence')
++
++    seq_bringup()
++    seq_init_settings()
++    seq_standby('wake', 0x00)
++    seq_standby('standby', 0x01)
++    seq_mode('mode_2048x1552_raw12', imx900_mode_2064x1552_12BPP)
++    # 1920x1080 and 1032x776 will be available in a future release.
++    # seq_mode('mode_1920x1080_raw12', imx900_mode_1920x1080_12BPP)
++    # seq_mode('mode_1032x776_raw12', imx900_mode_1032x776_12BPP)
++
++    seq_mode('mode_2048x1552_raw12_mono', imx900_mode_2048x1552_12BPP_MONO)
++    # seq_mode('mode_1920x1080_raw12_mono', imx900_mode_1920x1080_12BPP_MONO)
++    # seq_mode('mode_1032x776_raw12_mono', imx900_mode_1032x776_12BPP_MONO)
++    seq_mode('mode_1024x720_raw12_mono', imx900_mode_1024x720_12BPP_MONO)
++
++    seq_start()
++    seq_start_target()
++    seq_target_mode()
++    seq_stop()
++    seq_reghold('reghold_on', 0x01)
++    seq_reghold('reghold_off', 0x00)
++    # Normal needs no sequence: the mode tables already program it.
++    for trigger in ('sequential', 'fast'):
++        seq_trigger('trigger_%s_2048x1552' % trigger, VINT_EN_READOUT_ALL_PIXEL, trigger)
++        seq_trigger('trigger_%s_1024x720' % trigger, VINT_EN_READOUT_BINNING, trigger)
++    seq_conversion_gain('conversion_gain_low', 0x00)
++    seq_conversion_gain('conversion_gain_high', 0x01)
++    seq_set_gain()
++    seq_set_exposure()
++    seq_set_vmax()
++
++    ph_logger().info('FRAMOS: Successfully completed IMX900 main sequence')
++
++if __name__ == '__main__':
++    main()
+diff --git a/sipl/uddf/libraries/CMakeLists.txt b/sipl/uddf/libraries/CMakeLists.txt
+index db05e37..9ec4a08 100755
+--- a/sipl/uddf/libraries/CMakeLists.txt
++++ b/sipl/uddf/libraries/CMakeLists.txt
+@@ -1,4 +1,5 @@
+ # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++# SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
+ # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ #
+ # NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+@@ -7,11 +8,14 @@
+ # disclosure or distribution of this material and related documentation
+ # without an express license agreement from NVIDIA CORPORATION or
+ # its affiliates is strictly prohibited.
++#
++# Modified by FRAMOS GmbH, 2026: add the IMX900 camera module library.
+ 
+ 
+ add_subdirectory(deserMAX96712)
+ add_subdirectory(deserMAX96724)
+ add_subdirectory(moduleAR0234HAWK)
++add_subdirectory(moduleIMX900)
+ add_subdirectory(moduleR0SIM728)
+ add_subdirectory(moduleR0SIM623)
+ # moduleEagle links against hololink_core; only build it when hololink is available.
+diff --git a/sipl/uddf/libraries/moduleIMX900/CMakeLists.txt b/sipl/uddf/libraries/moduleIMX900/CMakeLists.txt
+new file mode 100755
+index 0000000..69d5784
+--- /dev/null
++++ b/sipl/uddf/libraries/moduleIMX900/CMakeLists.txt
+@@ -0,0 +1,38 @@
++# SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++# SPDX-License-Identifier: Apache-2.0
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++add_library(imx900_library SHARED IMX900Library.cpp)
++add_library(uddf::samples::imx900_library ALIAS imx900_library)
++
++target_compile_features(imx900_library PUBLIC cxx_std_17)
++
++target_link_libraries(imx900_library
++    PUBLIC
++        uddf::uddf
++        uddf-cdd::imx900_driver
++)
++
++if(HOLOLINK_AVAILABLE)
++    target_link_libraries(imx900_library PUBLIC uddf-cdd::hsb_transport_driver hololink_core)
++endif()
++
++# Query plugin — allows nvsipl_reprocess -Q coe to list IMX900
++add_library(nvsipl_qry_imx900 SHARED IMX900QueryPlugin.cpp)
++target_compile_features(nvsipl_qry_imx900 PRIVATE cxx_std_17)
++
++install(TARGETS nvsipl_qry_imx900
++    LIBRARY DESTINATION /usr/lib/nvsipl_drv
++    COMPONENT drivers
++)
+diff --git a/sipl/uddf/libraries/moduleIMX900/IMX900Library.cpp b/sipl/uddf/libraries/moduleIMX900/IMX900Library.cpp
+new file mode 100644
+index 0000000..10e378f
+--- /dev/null
++++ b/sipl/uddf/libraries/moduleIMX900/IMX900Library.cpp
+@@ -0,0 +1,89 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include "uddf/ddi/discovery.hpp"
++
++#include "IMX900ModuleDriver.hpp"
++#include "HsbTransportDriver.hpp"
++#include <memory>
++#include <vector>
++#include <string>
++
++namespace uddf::samples {
++
++const ddi::DriverInfo g_imx900DriverInfo = {
++    .name         = "IMX900",
++    .description  = "A driver for CoE (Camera over Ethernet) functionality via UDDF for the IMX900 sensor",
++    .vendor       = "Framos GmbH",
++    .revision     = "1.0.0"
++};
++
++const ddi::DriverInfo g_hsbTransportDriverInfo = {
++    .name         = "HsbTransport900",
++    .description  = "HSB (Holoscan Sensor Bridge) transport driver for the IMX900 sensor",
++    .vendor       = "Framos GmbH",
++    .revision     = "1.0.0"
++};
++
++class IMX900LibraryEnumerator final : public ddi::IDriverEnumerator {
++public:
++    std::string_view GetName() const override {
++        return "IMX900CameraModuleDriverProvider";
++    }
++
++    size_t GetDriverCount() const override {
++        return 2;
++    }
++
++    const ddi::DriverInfo* GetDriverInfo(size_t index) const override {
++        switch (index) {
++        case 0: return &g_imx900DriverInfo;
++        case 1: return &g_hsbTransportDriverInfo;
++        default: return nullptr;
++        }
++    }
++
++    std::unique_ptr<ddi::IDriver> CreateDriver(size_t index) override {
++        switch (index) {
++        case 0: return std::make_unique<IMX900ModuleDriver>();
++        // Deliver each device's register-offset width to the transport. This
++        // SIPL runtime never calls SetDeviceOffsetWidth() itself, so the widths
++        // the module driver declares for the framework are pushed in here from
++        // the same table - they must be set before any I2C traffic, and
++        // CreateDriver() runs before ConfigureDriver()/ProbeHardware()/Init().
++        case 1: {
++            auto transport = std::make_unique<HsbTransportDriver>();
++            for (const auto& device : IMX900ModuleDriver::GetDeviceTable()) {
++                transport->SetDeviceOffsetWidth(device.i2cAddress, device.offsetWidth);
++            }
++            // P-Con: both camera ports share one I2C bus behind the 0x70 mux;
++            // sensor 0 is J5 (channel 0x01), sensor 1 is J6 (0x04).
++            transport->SetCameraMuxChannels({ 0x01U, 0x04U });
++            return transport;
++        }
++        default: return nullptr;
++        }
++    }
++};
++
++} // namespace uddf::samples
++
++extern "C" {
++    uddf::ddi::DriverEnumeratorPtr uddf_discover_drivers() {
++        return std::make_unique<uddf::samples::IMX900LibraryEnumerator>();
++    }
++}
+diff --git a/sipl/uddf/libraries/moduleIMX900/IMX900QueryPlugin.cpp b/sipl/uddf/libraries/moduleIMX900/IMX900QueryPlugin.cpp
+new file mode 100755
+index 0000000..0a53bb5
+--- /dev/null
++++ b/sipl/uddf/libraries/moduleIMX900/IMX900QueryPlugin.cpp
+@@ -0,0 +1,714 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2026 FRAMOS GmbH
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++// nvsipl_query plugin for IMX900.
++// Exports CNvMQuery_GetJsonData() returning the platform configuration JSON.
++
++static const char g_imx900_json[] = R"JSON([
++    {
++        "cameraConfigs": [
++            {
++                "name": "IMX900",
++                "description": "IMX900 - 2064x1552 72FPS Mode",
++                "platform": "IMX900",
++                "platformConfig": "IMX900",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 0,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:C2:58:C1:D7",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 0,
++                    "description": "IMX900 sensor via CoE",
++                    "i2cAddress": "0x1a",
++                    "virtualChannels": [
++                        {
++                            "cfa": "rggb",
++                            "embeddedTopLines": 41,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 2048,
++                            "height": 1552,
++                            "fps": 72.1,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++)JSON"
++// IMX900_1080P, IMX900_SUB2 and IMX900_SUB2_MONO will be available in a future
++// release.
++#if 0
++R"JSON(            {
++                "name": "IMX900_1080P",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 1920x1080 ROI 100FPS Mode",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_1080P",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 0,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:C2:58:C1:D7",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 1,
++                    "description": "IMX900 sensor via CoE",
++                    "i2cAddress": "0x1a",
++                    "virtualChannels": [
++                        {
++                            "cfa": "rggb",
++                            "embeddedTopLines": 41,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 1920,
++                            "height": 1080,
++                            "fps": 100.0,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++            {
++                "name": "IMX900_SUB2",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 1032x776 12-bit 1/2 Subsampling Colour 136FPS Mode",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_SUB2",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 0,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:C2:58:C1:D7",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 2,
++                    "description": "IMX900 sensor via CoE",
++                    "i2cAddress": "0x1a",
++                    "virtualChannels": [
++                        {
++                            "cfa": "gbrg",
++                            "embeddedTopLines": 21,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 1032,
++                            "height": 776,
++                            "fps": 136.6,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++            {
++                "name": "IMX900_SUB2_MONO",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 1032x776 12-bit 1/2 Subsampling Mono 160FPS Mode",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_SUB2_MONO",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 0,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:C2:58:C1:D7",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 3,
++                    "description": "IMX900 sensor via CoE",
++                    "i2cAddress": "0x1a",
++                    "virtualChannels": [
++                        {
++                            "cfa": "gbrg",
++                            "embeddedTopLines": 21,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 1032,
++                            "height": 776,
++                            "fps": 160.0,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++)JSON"
++#endif
++R"JSON(            {
++                "name": "IMX900_BIN2X2_MONO",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 1024x720 12-bit 2x2 Average Mono 160FPS Mode",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_BIN2X2_MONO",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 0,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:C2:58:C1:D7",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 4,
++                    "description": "IMX900 sensor via CoE",
++                    "i2cAddress": "0x1a",
++                    "virtualChannels": [
++                        {
++                            "cfa": "gbrg",
++                            "embeddedTopLines": 21,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 1024,
++                            "height": 720,
++                            "fps": 160.1,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++            {
++                "name": "IMX900_CAM1",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J6",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_CAM1",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 1,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:c2:58:c0:ef",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 5,
++                    "description": "IMX900 sensor via CoE on P-Con J6",
++                    "i2cAddress": "0x1a",
++                    "deviceIndex": 1,
++                    "sensorGroup": 0,
++                    "virtualChannels": [
++                        {
++                            "cfa": "rggb",
++                            "embeddedTopLines": 41,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 2048,
++                            "height": 1552,
++                            "fps": 72.1,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++            {
++                "name": "IMX900_DUAL",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J5 (dual)",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_DUAL",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 0,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:c2:58:c0:ef",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 6,
++                    "description": "IMX900 sensor via CoE on P-Con J5",
++                    "i2cAddress": "0x1a",
++                    "deviceIndex": 0,
++                    "sensorGroup": 0,
++                    "virtualChannels": [
++                        {
++                            "cfa": "rggb",
++                            "embeddedTopLines": 41,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 2048,
++                            "height": 1552,
++                            "fps": 72.1,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++            {
++                "name": "IMX900_DUAL",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J6 (dual)",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_DUAL",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 1,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:c2:58:c0:ef",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 7,
++                    "description": "IMX900 sensor via CoE on P-Con J6",
++                    "i2cAddress": "0x1a",
++                    "deviceIndex": 1,
++                    "sensorGroup": 0,
++                    "virtualChannels": [
++                        {
++                            "cfa": "rggb",
++                            "embeddedTopLines": 41,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 2048,
++                            "height": 1552,
++                            "fps": 72.1,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++            {
++                "name": "IMX900_DUAL_SYNC",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J5 (dual, sync controller)",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_DUAL_SYNC",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 0,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:c2:58:c0:ef",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 8,
++                    "description": "IMX900 sensor via CoE on P-Con J5",
++                    "i2cAddress": "0x1a",
++                    "deviceIndex": 0,
++                    "sensorGroup": 0,
++                    "virtualChannels": [
++                        {
++                            "cfa": "rggb",
++                            "embeddedTopLines": 41,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 2048,
++                            "height": 1552,
++                            "fps": 72.1,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++            {
++                "name": "IMX900_DUAL_SYNC",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J6 (dual, sync target)",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_DUAL_SYNC",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 1,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:c2:58:c0:ef",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 9,
++                    "description": "IMX900 sensor via CoE on P-Con J6",
++                    "i2cAddress": "0x1a",
++                    "deviceIndex": 1,
++                    "sensorGroup": 1,
++                    "virtualChannels": [
++                        {
++                            "cfa": "rggb",
++                            "embeddedTopLines": 41,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 2048,
++                            "height": 1552,
++                            "fps": 72.1,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            },
++            {
++                "name": "IMX900_J5_SEQ",
++                "moduleDriverName": "IMX900",
++                "description": "IMX900 - 2064x1552 72FPS Mode, P-Con J5, sync target (external XVS/XHS or sequential trigger)",
++                "platform": "IMX900",
++                "platformConfig": "IMX900_J5_SEQ",
++                "mipiSettings": {
++                    "lanes": 4,
++                    "lpBypassMode": false,
++                    "tClkSettle": 0,
++                    "mipiClockRate": 297000,
++                    "tHsSettle": 0,
++                    "lanePolarity": [
++                        0,
++                        0,
++                        0,
++                        0
++                    ],
++                    "laneSwizzle": "LANE_SWIZZLE_A0A1B0B1",
++                    "dphyRate": 891,
++                    "cphyRate": 891,
++                    "phyMode": "dphy"
++                },
++                "CoECamera": {
++                    "isStereo": false,
++                    "hsbSensorIndex": 0,
++                    "hsb_id": 0,
++                    "sensor": {
++                        "mac_address": "00:50:c2:58:c0:ef",
++                        "ip_address": "192.168.0.2"
++                    }
++                },
++                "sensorInfo": {
++                    "name": "IMX900",
++                    "id": 10,
++                    "description": "IMX900 sensor via CoE on P-Con J5",
++                    "i2cAddress": "0x1a",
++                    "deviceIndex": 0,
++                    "sensorGroup": 1,
++                    "virtualChannels": [
++                        {
++                            "cfa": "rggb",
++                            "embeddedTopLines": 41,
++                            "embeddedBottomLines": 0,
++                            "inputFormat": "raw12tp",
++                            "width": 2048,
++                            "height": 1552,
++                            "fps": 72.1,
++                            "isEmbeddedDataTypeEnabled": true
++                        }
++                    ]
++                },
++                "isEEPROMSupported": false
++            }
++        ]
++    },
++    {
++        "transportSettings": [
++            {
++                "name": "IMX900",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900 camera",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0
++            },
++)JSON"
++#if 0
++R"JSON(            {
++                "name": "IMX900_1080P",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900_1080P",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0
++            },
++            {
++                "name": "IMX900_SUB2",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900_SUB2",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0
++            },
++            {
++                "name": "IMX900_SUB2_MONO",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900_SUB2_MONO",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0
++            },
++)JSON"
++#endif
++R"JSON(            {
++                "name": "IMX900_BIN2X2_MONO",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900_BIN2X2_MONO",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0
++            },
++            {
++                "name": "IMX900_CAM1",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900_CAM1",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0,
++                "sync_sensors": false
++            },
++            {
++                "name": "IMX900_DUAL",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900_DUAL (J5 + J6 on one SFP+)",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0,
++                "sync_sensors": false
++            },
++            {
++                "name": "IMX900_DUAL_SYNC",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900_DUAL_SYNC (J5 controller, J6 target on one SFP+)",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0,
++                "sync_sensors": false
++            },
++            {
++                "name": "IMX900_J5_SEQ",
++                "compatible_name": "HsbTransport900",
++                "description": "Transport settings for IMX900_J5_SEQ",
++                "if_name": "mgbe0_0",
++                "ip_address": "192.168.0.2",
++                "vlan_enable": false,
++                "hsb_id": 0,
++                "sync_sensors": false
++            }
++        ]
++    }
++])JSON";
++
++extern "C" {
++    const char* CNvMQuery_GetJsonData() {
++        return g_imx900_json;
++    }
++}
